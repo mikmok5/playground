@@ -41,6 +41,16 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
+  <section id="offline" class="offline" aria-labelledby="offlineTitle" hidden>
+    <h2 id="offlineTitle">Connect live flights</h2>
+    <p>The flight trackers this tank reads from don't allow web pages to fetch their data directly, so your browser needs a small relay in between. It's free, takes about two minutes, and you only set it up once.</p>
+    <div class="offline-actions">
+      <a class="btn primary" id="setupLink" href="https://github.com/mikmok5/playground/blob/main/relay/README.md" target="_blank" rel="noopener">Set up the relay ↗</a>
+      <button class="btn" type="button" id="haveRelayBtn">I have a relay link</button>
+      <button class="btn ghost" type="button" id="demoBtn">Watch demo fish</button>
+    </div>
+  </section>
+
   <section id="card" class="sheet" aria-label="Selected aircraft" hidden>
     <div class="card-head">
       <canvas id="portrait" width="96" height="72" aria-hidden="true"></canvas>
@@ -54,9 +64,9 @@
       </button>
     </div>
     <div id="route" class="route" hidden>
-      <div class="ap"><b id="rFrom">—</b><span id="rFromN"></span></div>
+      <div class="ap"><small>From</small><b id="rFrom">—</b><span id="rFromN"></span></div>
       <div class="rtrack" aria-hidden="true"><i id="rBar"></i><span id="rPlane"></span></div>
-      <div class="ap to"><b id="rTo">—</b><span id="rToN"></span></div>
+      <div class="ap to"><small>To</small><b id="rTo">—</b><span id="rToN"></span></div>
     </div>
     <p id="routeNote" class="route-note" hidden></p>
     <dl class="stats">
@@ -94,6 +104,15 @@
           </button>
         </div>
       </div>
+      <div class="group" id="relayGroup">
+        <h3>Live data relay</h3>
+        <form class="relay-form" id="relayForm">
+          <label class="visually-hidden" for="relayInput">Relay link</label>
+          <input id="relayInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://sky-aquarium-relay.you.workers.dev">
+          <button type="submit" class="btn primary small">Save</button>
+        </form>
+        <p class="hint" id="relayHint">Paste the link of your Sky Aquarium relay. <a href="https://github.com/mikmok5/playground/blob/main/relay/README.md" target="_blank" rel="noopener">How to get one</a></p>
+      </div>
       <div class="group">
         <h3>Tank width</h3>
         <div class="seg" id="radius" role="radiogroup" aria-label="Tank width">
@@ -123,6 +142,7 @@
           <li><b>Height</b> is altitude. The surface is 45,000 ft and the sand is the ground.</li>
           <li><b>Left and right</b> is west and east of you. The glowing beacon on the sand is where you are.</li>
           <li><b>Size and haze</b> show north and south. Fish to the north are smaller and fainter.</li>
+          <li><b>Teal codes</b> under each callsign show where a flight came from and where it's heading, like LHR → JFK.</li>
           <li><b>Color</b> is the airline, so flights from the same airline swim in matching schools.</li>
           <li><b>Bubbles</b> trail aircraft that are climbing.</li>
           <li><b>Light</b> follows the real sun. At night the fish glow.</li>
@@ -134,10 +154,11 @@
         <h3>Field guide</h3>
         <ul class="guide" id="guide"></ul>
       </div>
-      <p class="credit">Live positions from <a href="https://adsb.lol" target="_blank" rel="noopener">ADSB.lol</a>, <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a> or <a href="https://opensky-network.org" target="_blank" rel="noopener">OpenSky Network</a>, crowd-sourced from ADS-B receivers. Positions can lag by a few seconds and some aircraft are not shown. Not for navigation.</p>
+      <p class="credit">Live positions from <a href="https://adsb.lol" target="_blank" rel="noopener">ADSB.lol</a> or <a href="https://adsb.fi" target="_blank" rel="noopener">adsb.fi</a>, crowd-sourced from ADS-B receivers. Routes from <a href="https://www.adsbdb.com" target="_blank" rel="noopener">adsbdb</a> and <a href="https://hexdb.io" target="_blank" rel="noopener">hexdb</a>; they come from schedule databases and can occasionally be wrong. Positions can lag by a few seconds and some aircraft are not shown. Not for navigation.</p>
     </div>
   </section>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

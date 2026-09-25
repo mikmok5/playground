@@ -2,7 +2,9 @@
  *
  * Tank axes:  x = east/west offset from you, y = altitude (surface = 45,000 ft),
  *             depth (size + haze) = north/south offset.
- * Data:       readsb-style JSON from ADSB.lol / airplanes.live, or OpenSky states.
+ * Data:       readsb-style JSON from ADSB.lol or adsb.fi. Neither sends CORS headers, so the
+ *             browser reaches them through the Sky Aquarium relay (see ../relay). Routes come
+ *             from adsbdb and hexdb, which browsers can call directly.
  *             Positions are dead-reckoned between polls so fish keep moving smoothly.
  */
 (() => {
@@ -297,27 +299,24 @@
   }
 
   // ---------------------------------------------------------------- data sources
-  const PROVIDERS = [
-    {
-      name: 'ADSB.lol', every: 6000,
-      url: () => `https://api.adsb.lol/v2/lat/${place.lat.toFixed(4)}/lon/${place.lon.toFixed(4)}/dist/${radiusNm}`,
-      parse: parseReadsb,
-    },
-    {
-      name: 'airplanes.live', every: 7000,
-      url: () => `https://api.airplanes.live/v2/point/${place.lat.toFixed(4)}/${place.lon.toFixed(4)}/${radiusNm}`,
-      parse: parseReadsb,
-    },
-    {
-      name: 'OpenSky', every: 15000,
-      url: () => {
-        const R = radiusNm * NM_KM;
-        const a = fromWorld(-R, -R), b = fromWorld(R, R);
-        return `https://opensky-network.org/api/states/all?lamin=${a.lat.toFixed(3)}&lomin=${a.lon.toFixed(3)}&lamax=${b.lat.toFixed(3)}&lomax=${b.lon.toFixed(3)}&extended=1`;
-      },
-      parse: parseOpenSky,
-    },
-  ];
+  // The relay adds the CORS headers these APIs leave out. Direct calls stay last in the list
+  // so the app starts working on its own if an upstream ever enables CORS.
+  const defaultRelay = (window.SKY_AQUARIUM && window.SKY_AQUARIUM.relay) || '';
+  let relayUrl = store.get('relay', '') || defaultRelay;
+  const relayBase = () => relayUrl.trim().replace(/\/+$/, '');
+  const at = () => [place.lat.toFixed(4), place.lon.toFixed(4)];
+
+  function providers() {
+    const list = [];
+    const r = relayBase();
+    if (r) {
+      list.push({ name: 'ADSB.lol', every: 5000, url: () => `${r}/adsblol/v2/lat/${at()[0]}/lon/${at()[1]}/dist/${radiusNm}`, parse: parseReadsb });
+      list.push({ name: 'adsb.fi', every: 5000, url: () => `${r}/adsbfi/api/v3/lat/${at()[0]}/lon/${at()[1]}/dist/${radiusNm}`, parse: parseReadsb });
+    }
+    list.push({ name: 'ADSB.lol', every: 6000, url: () => `https://api.adsb.lol/v2/lat/${at()[0]}/lon/${at()[1]}/dist/${radiusNm}`, parse: parseReadsb });
+    list.push({ name: 'adsb.fi', every: 6000, url: () => `https://opendata.adsb.fi/api/v3/lat/${at()[0]}/lon/${at()[1]}/dist/${radiusNm}`, parse: parseReadsb });
+    return list;
+  }
 
   function parseReadsb(j) {
     const list = j.ac || j.aircraft || [];
@@ -404,22 +403,26 @@
     return demo.planes.map(p => ({ ...p, ...fromWorld(p.dx, p.dn) }));
   }
 
-  let pollTimer = 0, pollToken = 0, providerIdx = 0, failStreak = 0;
+  let pollTimer = 0, pollToken = 0, providerIdx = 0, failStreak = 0, demoWanted = false;
 
   async function poll() {
     clearTimeout(pollTimer);
     if (document.hidden) { pollTimer = setTimeout(poll, 2000); return; }
     const token = ++pollToken;
-    for (let i = 0; i < PROVIDERS.length; i++) {
-      const idx = (providerIdx + i) % PROVIDERS.length;
-      const pv = PROVIDERS[idx];
+    const list = providers();
+    if (providerIdx >= list.length) providerIdx = 0;
+    for (let i = 0; i < list.length; i++) {
+      const idx = (providerIdx + i) % list.length;
+      const pv = list[idx];
       try {
-        const list = pv.parse(await fetchJSON(pv.url(), 10000));
+        const planes = pv.parse(await fetchJSON(pv.url(), 10000));
         if (token !== pollToken) return;
         providerIdx = idx;
         failStreak = 0;
-        sourceName = pv.name;
-        ingest(list, false);
+        demoWanted = false;
+        sourceName = pv.name + (relayBase() && pv.url().startsWith(relayBase()) ? ' via your relay' : '');
+        ingest(planes, false);
+        if (mode !== 'live') hideOffline();
         setMode('live');
         pollTimer = setTimeout(poll, pv.every);
         return;
@@ -429,15 +432,18 @@
       }
     }
     failStreak++;
-    if (mode !== 'demo' && (failStreak >= 2 || fishes.size === 0)) {
-      setMode('demo');
-      toast('No live flight data could be reached, so these are demo fish. The tank keeps trying the live sources.', 6500);
+    if (demoWanted) {
+      if (mode !== 'demo') setMode('demo');
+      sourceName = 'Demo';
+      ingest(demoPlanes(), true);
+    } else if (mode !== 'offline' && (failStreak >= 2 || mode === 'wait')) {
+      setMode('offline');
+      showOffline();
     }
-    if (mode === 'demo') { sourceName = 'Demo'; ingest(demoPlanes(), true); }
-    pollTimer = setTimeout(poll, mode === 'demo' ? 20000 : 5000);
+    pollTimer = setTimeout(poll, demoWanted ? 20000 : 8000);
   }
 
-  // Between live retries, keep demo fish fed so they never go stale.
+  // Keep demo fish fed between live retries so they never go stale.
   setInterval(() => { if (mode === 'demo' && !document.hidden) ingest(demoPlanes(), true); }, 5000);
 
   function ingest(list, isDemo) {
@@ -451,6 +457,7 @@
       if (!f || f.leaving) {
         f = newFish(a);
         fishes.set(a.id, f);
+        if (!isDemo) queueRoute(f);
       }
       f.a = a;
       f.w0 = w0;
@@ -1159,10 +1166,18 @@
     ctx.restore();
 
     if (showLabels && f.a.callsign && f.alpha > 0.2) {
+      const fade = f.alpha * (1 - f.z * 0.45);
+      const ly = y + f.len * (f.species === 'jelly' ? 0.75 : 0.34) + 10;
       ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
       ctx.textAlign = 'center';
-      ctx.fillStyle = `rgba(205,240,252,${(0.62 * f.alpha * (1 - f.z * 0.45)).toFixed(3)})`;
-      ctx.fillText(f.a.callsign, x, y + f.len * (f.species === 'jelly' ? 0.75 : 0.34) + 10);
+      ctx.fillStyle = `rgba(205,240,252,${(0.62 * fade).toFixed(3)})`;
+      ctx.fillText(f.a.callsign, x, ly);
+      const r = f.route;
+      if (r && r.from?.code && r.to?.code) {
+        ctx.font = '600 10px "IBM Plex Mono", ui-monospace, monospace';
+        ctx.fillStyle = `rgba(110,232,222,${(0.85 * fade).toFixed(3)})`;
+        ctx.fillText(`${r.from.code} → ${r.to.code}`, x, ly + 12);
+      }
       ctx.textAlign = 'left';
     }
   }
@@ -1266,7 +1281,9 @@
     const sp = SPECIES[f.species];
     const alt = f.w ? fmt(Math.round(f.w.alt / 100) * 100) : fmt(f.a.alt);
     const kind = TYPES[f.a.type] || sp.name.toLowerCase();
-    toast(`Look up! ${who} (${kind}) is passing over you at ${alt} ft.`, 9000, () => select(f));
+    const r = f.route;
+    const trip = r && r.from?.name && r.to?.name ? `, flying ${r.from.name} to ${r.to.name},` : ` (${kind})`;
+    toast(`Look up! ${who}${trip} is passing over you at ${alt} ft.`, 9000, () => select(f), 'Tap to meet it.');
     f.boost = 1;
     if (f.species === 'whale') whaleSong(); else chime();
     if (navigator.vibrate) try { navigator.vibrate([30, 60, 30]); } catch { /* ignore */ }
@@ -1289,36 +1306,96 @@
     blip(330, 0.18);
     if (navigator.vibrate) try { navigator.vibrate(8); } catch { /* ignore */ }
   }
-  const routeCache = new Map(), photoCache = new Map();
-  const apFromLol = a => ({ code: a.iata || a.icao, name: a.location || a.name || '', lat: a.lat, lon: a.lon });
-  const apFromDb = a => ({ code: a.iata_code || a.icao_code, name: a.municipality || a.name || '', lat: a.latitude, lon: a.longitude });
+  // ---------------------------------------------------------------- routes
+  // adsbdb first (origin, destination and airline in one call), hexdb as a fallback.
+  // Both send CORS headers. Results are cached per callsign in memory and for 6 h on the device.
+  const routeCache = new Map(), photoCache = new Map(), airportCache = new Map();
+  const ROUTE_TTL = 6 * 3600 * 1000;
+  const savedRoutes = store.get('routes', {});
+  const cleanName = s => (s || '').replace(/\s+(International\s+)?Airport$/i, '').trim();
+  const apFromDb = a => ({ code: a.iata_code || a.icao_code, name: a.municipality || cleanName(a.name), airport: a.name || '', country: a.country_name || '', lat: a.latitude, lon: a.longitude });
+
+  function hexAirport(icao) {
+    if (!airportCache.has(icao)) {
+      airportCache.set(icao, fetchJSON(`https://hexdb.io/api/v1/airport/icao/${encodeURIComponent(icao)}`, 8000)
+        .then(a => (a && (a.iata || a.icao) ? { code: a.iata || a.icao, name: cleanName(a.airport) || a.icao, airport: a.airport || '', country: a.country_code || '', lat: a.latitude, lon: a.longitude } : null))
+        .catch(() => null));
+    }
+    return airportCache.get(icao);
+  }
+
+  async function fetchRoute(cs) {
+    try {
+      const fr = (await fetchJSON(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`, 8000))?.response?.flightroute;
+      if (fr?.origin && fr?.destination) return { from: apFromDb(fr.origin), to: apFromDb(fr.destination), stops: 0, airline: fr.airline?.name || null };
+    } catch { /* not in adsbdb */ }
+    try {
+      const codes = ((await fetchJSON(`https://hexdb.io/api/v1/route/icao/${encodeURIComponent(cs)}`, 8000))?.route || '').split('-').filter(Boolean);
+      if (codes.length >= 2) {
+        const [a, b] = await Promise.all([hexAirport(codes[0]), hexAirport(codes[codes.length - 1])]);
+        if (a && b) return { from: a, to: b, stops: codes.length - 2, airline: null };
+      }
+    } catch { /* not in hexdb */ }
+    return null;
+  }
 
   function lookupRoute(f) {
     const cs = f.a.callsign;
     if (!cs || f.demo) return Promise.resolve(null);
     if (routeCache.has(cs)) return routeCache.get(cs);
-    const p = (async () => {
-      try {
-        const r = await fetch('https://api.adsb.lol/api/0/routeset', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planes: [{ callsign: cs, lat: f.a.lat, lng: f.a.lon }] }),
-        });
-        if (r.ok) {
-          const x = (await r.json())?.[0];
-          const ap = x?._airports;
-          if (ap && ap.length >= 2 && x.plausible !== false && x.plausible !== 0) {
-            return { from: apFromLol(ap[0]), to: apFromLol(ap[ap.length - 1]), stops: ap.length - 2, airline: null };
-          }
-        }
-      } catch { /* try the next source */ }
-      try {
-        const fr = (await fetchJSON(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`, 8000))?.response?.flightroute;
-        if (fr?.origin && fr?.destination) return { from: apFromDb(fr.origin), to: apFromDb(fr.destination), stops: 0, airline: fr.airline?.name || null };
-      } catch { /* no route known */ }
-      return null;
-    })();
+    const saved = savedRoutes[cs];
+    if (saved && Date.now() - saved.t < ROUTE_TTL) {
+      const p = Promise.resolve(saved.r);
+      routeCache.set(cs, p);
+      return p;
+    }
+    const p = fetchRoute(cs).then(r => {
+      savedRoutes[cs] = { r, t: Date.now() };
+      const keys = Object.keys(savedRoutes);
+      if (keys.length > 600) for (const k of keys.sort((x, y) => savedRoutes[x].t - savedRoutes[y].t).slice(0, keys.length - 600)) delete savedRoutes[k];
+      store.set('routes', savedRoutes);
+      return r;
+    });
     routeCache.set(cs, p);
     return p;
+  }
+
+  // A route database can be stale (callsigns get reused), so keep a route only when the
+  // aircraft is roughly on the way between its two airports.
+  function plausible(f, r) {
+    if (!r || !r.from?.code || !r.to?.code) return false;
+    const pts = [r.from.lat, r.from.lon, r.to.lat, r.to.lon];
+    if (!pts.every(v => typeof v === 'number')) return true;
+    const leg = haversine(r.from.lat, r.from.lon, r.to.lat, r.to.lon);
+    const via = haversine(r.from.lat, r.from.lon, f.a.lat, f.a.lon) + haversine(f.a.lat, f.a.lon, r.to.lat, r.to.lon);
+    return via <= leg * 1.25 + 150;
+  }
+
+  function resolveRoute(f) {
+    return lookupRoute(f).then(r => {
+      f.route = plausible(f, r) ? r : null;
+      if (selected === f) fillCard();
+      return f.route;
+    });
+  }
+
+  // Look routes up for every flight in view, nearest first, a few at a time.
+  const routeQueue = [];
+  let routeActive = 0;
+  function queueRoute(f) {
+    if (!f.a.callsign || f.route !== undefined || f.routeQueued) return;
+    f.routeQueued = true;
+    routeQueue.push(f);
+    pumpRoutes();
+  }
+  function pumpRoutes() {
+    while (routeActive < 3 && routeQueue.length) {
+      routeQueue.sort((a, b) => (a.dist || 1e9) - (b.dist || 1e9));
+      const f = routeQueue.shift();
+      if (!fishes.has(f.id) || f.leaving || f.route !== undefined) continue;
+      routeActive++;
+      resolveRoute(f).catch(() => { f.route = null; }).finally(() => { routeActive--; pumpRoutes(); });
+    }
   }
 
   function lookupPhoto(f) {
@@ -1343,13 +1420,18 @@
     $('#routeNote').hidden = true;
     $('#photoWrap').hidden = true;
     if (f.demo) return;
-    if (f.route === undefined) lookupRoute(f).then(r => { f.route = r; if (selected === f) fillCard(); });
+    if (f.route === undefined) resolveRoute(f);
     if (f.photo === undefined) lookupPhoto(f).then(p => { f.photo = p; if (selected === f) fillCard(); });
   }
 
   function fillRoute(f) {
     const r = f.route, routeEl = $('#route'), note = $('#routeNote');
-    if (!r || !r.from?.code || !r.to?.code) { routeEl.hidden = true; note.hidden = true; return; }
+    if (!r || !r.from?.code || !r.to?.code) {
+      routeEl.hidden = true;
+      note.hidden = f.route !== null;
+      setText('routeNote', f.a.callsign ? 'No route on file for this flight.' : 'This aircraft isn\u2019t broadcasting a flight number, so its route is unknown.');
+      return;
+    }
     routeEl.hidden = false;
     setText('rFrom', r.from.code);
     setText('rFromN', r.from.name);
@@ -1362,7 +1444,8 @@
       const b = haversine(pos.lat, pos.lon, r.to.lat, r.to.lon);
       if (a + b > 0) pct = a / (a + b);
       note.hidden = false;
-      setText('routeNote', `Scheduled route${r.stops > 0 ? ` with ${r.stops} stop${r.stops > 1 ? 's' : ''}` : ''} · ${fmt(b)} km to go`);
+      const full = ap => [ap.airport || ap.name, ap.country].filter(Boolean).join(', ');
+      setText('routeNote', `${full(r.from)} to ${full(r.to)}${r.stops > 0 ? ` with ${r.stops} stop${r.stops > 1 ? 's' : ''}` : ''} · ${fmt(b)} km to go`);
     } else {
       note.hidden = true;
     }
@@ -1468,6 +1551,7 @@
     $('#labelsToggle').checked = showLabels;
     $('#soundToggle').checked = soundOn;
     $('#alertToggle').checked = alertsOn;
+    if (document.activeElement !== $('#relayInput')) $('#relayInput').value = store.get('relay', '') || '';
     for (const b of document.querySelectorAll('#lightMode button')) b.setAttribute('aria-checked', b.dataset.light === lightMode ? 'true' : 'false');
     updateLight();
   }
@@ -1485,7 +1569,8 @@
     cardEl.hidden = true;
     demo.planes = null;
     failStreak = 0;
-    if (mode === 'live') setMode('wait');
+    if (mode === 'live' || mode === 'offline') setMode('wait');
+    hideOffline();
     poll();
   }
 
@@ -1566,18 +1651,55 @@
   function updateStatus() {
     let n = 0;
     for (const f of fishes.values()) if (!f.leaving) n++;
-    const label = mode === 'live' ? `Live · ${n} fish` : mode === 'demo' ? `Demo · ${n} fish` : 'Connecting';
+    const label = mode === 'live' ? `Live · ${n} fish` : mode === 'demo' ? `Demo · ${n} fish` : mode === 'offline' ? 'Not connected' : 'Connecting';
     setText('statusText', label);
-    statusEl.title = mode === 'live' ? `Live data from ${sourceName}` : mode === 'demo' ? 'Live data unavailable, showing simulated traffic' : 'Looking for aircraft';
+    statusEl.title = mode === 'live' ? `Live data from ${sourceName}` : mode === 'demo' ? 'Simulated traffic, not real flights' : mode === 'offline' ? 'Live flight data is not reachable yet' : 'Looking for aircraft';
   }
+
+  // ---------------------------------------------------------------- offline + relay
+  const offlineEl = $('#offline');
+  function showOffline() {
+    const hasRelay = !!relayBase();
+    $('#offlineTitle').textContent = hasRelay ? 'Your relay isn\u2019t answering' : 'Connect live flights';
+    offlineEl.querySelector('p').textContent = hasRelay
+      ? `The tank can't reach live flights through ${relayBase()}. Check the link in the menu, or open it in your browser to see whether the relay is running. The tank keeps retrying.`
+      : 'The flight trackers this tank reads from don\u2019t allow web pages to fetch their data directly, so your browser needs a small relay in between. It\u2019s free, takes about two minutes, and you only set it up once.';
+    offlineEl.hidden = false;
+  }
+  function hideOffline() { offlineEl.hidden = true; }
+  $('#demoBtn').addEventListener('click', () => {
+    hideOffline();
+    demoWanted = true;
+    setMode('demo');
+    sourceName = 'Demo';
+    ingest(demoPlanes(), true);
+    toast('These are demo fish, not real flights. Open the menu to connect live data.', 5000);
+  });
+  $('#haveRelayBtn').addEventListener('click', () => {
+    hideOffline();
+    openSettings();
+    setTimeout(() => $('#relayInput').focus(), 50);
+  });
+  $('#relayForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('#relayInput').value.trim();
+    if (v && !/^https:\/\/[^\s/]+/.test(v)) { setText('relayHint', 'The link should start with https:// — copy it from your Cloudflare dashboard.'); return; }
+    relayUrl = v || defaultRelay;
+    store.set('relay', v);
+    setText('relayHint', v ? 'Saved. Connecting through your relay…' : 'Cleared. Using the site default.');
+    providerIdx = 0;
+    demoWanted = false;
+    resetTank();
+  });
 
   let toastTimer = 0, toastAction = null;
   $('#toast').addEventListener('click', () => { const a = toastAction; $('#toast').hidden = true; if (a) a(); });
-  function toast(msg, ms = 4000, action = null) {
+  function toast(msg, ms = 4000, action = null, cta = '') {
     const el = $('#toast');
     el.textContent = msg;
     el.hidden = false;
     toastAction = action;
+    el.dataset.cta = cta;
     el.classList.toggle('action', !!action);
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.hidden = true; }, ms);

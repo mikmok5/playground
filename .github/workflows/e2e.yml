@@ -1,0 +1,74 @@
+name: Sky Aquarium live end-to-end check
+
+on:
+  push:
+    branches: [claude/web-app-ideas-7wwit4]
+    paths: ['sky-aquarium/**', 'relay/**', '.github/workflows/e2e.yml']
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start the relay locally
+        working-directory: relay
+        run: |
+          npm install --no-audit --no-fund
+          nohup npx wrangler dev --port 8787 --ip 127.0.0.1 > wrangler.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8787/ >/dev/null && break; sleep 1; done
+          cat wrangler.log | tail -5
+      - name: Relay responses
+        run: |
+          curl -sS -D - -o body.json -H "Origin: http://localhost:8000" "http://127.0.0.1:8787/adsblol/v2/lat/51.4700/lon/-0.4500/dist/50" | grep -iE '^HTTP|^access-control'
+          node -e "const j=require('./body.json');console.log('adsblol aircraft:',(j.ac||[]).length)"
+          curl -sS -D - -o body2.json -H "Origin: http://localhost:8000" "http://127.0.0.1:8787/adsbfi/api/v3/lat/51.4700/lon/-0.4500/dist/50" | grep -iE '^HTTP|^access-control'
+          node -e "const j=require('./body2.json');console.log('adsbfi aircraft:',(j.ac||j.aircraft||[]).length)"
+          curl -sS -o /dev/null -w "blocked path -> %{http_code}\n" "http://127.0.0.1:8787/adsblol/v2/mil"
+      - name: Run the app against the relay in Chromium
+        run: |
+          (cd sky-aquarium && nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
+          npm init -y >/dev/null && npm install --no-audit --no-fund playwright@1.56.1 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+          cat > e2e.mjs <<'JS'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch();
+          const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+          await ctx.addInitScript(() => {
+            localStorage.setItem('skyaq.relay', JSON.stringify('http://127.0.0.1:8787'));
+            localStorage.setItem('skyaq.place', JSON.stringify({ name: 'London', lat: 51.47, lon: -0.45 }));
+          });
+          const page = await ctx.newPage();
+          page.on('pageerror', e => console.log('PAGE ERROR', e.message));
+          page.on('console', m => { if (m.type() === 'warning' || m.type() === 'error') console.log('console.' + m.type(), m.text()); });
+          await page.goto('http://localhost:8000/');
+          await page.waitForTimeout(15000);
+          console.log('STATUS:', await page.textContent('#statusText'), '| offline panel visible:', await page.isVisible('#offline'));
+          let found = 0;
+          for (let y = 140; y < 740 && found < 4; y += 24) for (let x = 40; x < 380 && found < 4; x += 24) {
+            await page.mouse.click(x, y); await page.waitForTimeout(20);
+            if (await page.isVisible('#card')) {
+              await page.waitForTimeout(2500);
+              const t = await page.textContent('#cTitle');
+              const route = await page.isVisible('#route') ? `${await page.textContent('#rFrom')} (${await page.textContent('#rFromN')}) -> ${await page.textContent('#rTo')} (${await page.textContent('#rToN')}) | ${await page.textContent('#routeNote')}` : (await page.isVisible('#routeNote') ? await page.textContent('#routeNote') : 'route pending');
+              console.log('CARD:', t, '|', await page.textContent('#cSpecies'), '|', await page.textContent('#sAlt'), '|', route, '|', await page.textContent('#cSource'));
+              found++;
+              await page.click('#card [data-close]');
+              await page.waitForTimeout(200);
+            }
+          }
+          await page.screenshot({ path: 'e2e.png' });
+          await browser.close();
+          JS
+          node e2e.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshot
+          path: e2e.png

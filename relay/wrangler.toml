@@ -1,0 +1,8 @@
+name = "sky-aquarium-relay"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# Comma-separated list of sites allowed to read through this relay. "*" allows any site.
+ALLOWED_ORIGINS = "https://mikmok5.github.io,http://localhost:8000"
