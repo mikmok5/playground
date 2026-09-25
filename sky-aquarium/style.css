@@ -198,6 +198,62 @@ a { color: var(--glow); }
 }
 .sub { margin: 0; color: var(--ink-dim); font-size: 14px; }
 
+.route {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+.ap { display: grid; min-width: 0; }
+.ap.to { text-align: right; }
+.ap b { font: 700 18px/1.1 var(--display); letter-spacing: 0.02em; }
+.ap span {
+  font-size: 12px;
+  color: var(--ink-dim);
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rtrack {
+  position: relative;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--ink-faint) 0 4px, transparent 4px 9px);
+}
+.rtrack i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--glow); border-radius: 2px; transition: width 0.6s; }
+.rtrack span {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 10px; height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--glow);
+  box-shadow: 0 0 0 4px rgba(63, 208, 201, 0.25);
+  transition: left 0.6s;
+}
+.route-note { margin: 6px 0 0; font-size: 12px; color: var(--ink-faint); }
+.photo {
+  position: relative;
+  margin: 12px 0 0;
+  height: 96px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #04202f;
+}
+.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo figcaption {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 14px 10px 5px;
+  font: 400 10.5px/1.2 var(--mono);
+  color: rgba(230, 247, 255, 0.85);
+  background: linear-gradient(transparent, rgba(2, 14, 22, 0.8));
+}
+.toast.action { pointer-events: auto; cursor: pointer; }
+.toast.action::after { content: " Tap to meet it."; color: var(--glow); font-weight: 600; }
+
 .stats {
   margin: 14px 0 0;
   display: grid;

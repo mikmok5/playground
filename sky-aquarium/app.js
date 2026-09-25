@@ -11,6 +11,7 @@
   // ---------------------------------------------------------------- constants
   const ALT_MAX = 45000;          // ft at the water surface
   const STALE_MS = 40000;         // drop an aircraft this long after its last report
+  const OVERHEAD_KM = 4;          // "look up!" radius
   const NM_KM = 1.852;
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const MOTION = REDUCED ? 0.35 : 1;
@@ -133,6 +134,8 @@
   let radiusNm = store.get('nm', 50);
   let showLabels = store.get('labels', true);
   let soundOn = store.get('sound', true);
+  let alertsOn = store.get('alerts', true);
+  let lightMode = store.get('light', 'auto'); // auto | day | night
 
   const fishes = new Map();
   let selected = null;
@@ -177,11 +180,7 @@
     Lay.left = 46;
     Lay.right = W - 18;
 
-    bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-    bgGrad.addColorStop(0, '#0f5673');
-    bgGrad.addColorStop(0.18, '#0a3e59');
-    bgGrad.addColorStop(0.6, '#062a40');
-    bgGrad.addColorStop(1, '#03121d');
+    buildWater();
     sandGrad = ctx.createLinearGradient(0, Lay.sand - 10, 0, H);
     sandGrad.addColorStop(0, '#7a6d50');
     sandGrad.addColorStop(0.35, '#51472f');
@@ -189,6 +188,55 @@
 
     buildScenery();
     for (const f of fishes.values()) f.init = false;
+  }
+
+  // ---------------------------------------------------------------- sun + light
+  // Solar elevation in degrees (NOAA low-precision formula, good to ~1 degree).
+  function sunElevation(lat, lon, date = new Date()) {
+    const rad = Math.PI / 180;
+    const d = date.getTime() / 86400000 - 10957.5; // days since J2000
+    const g = (357.529 + 0.98560028 * d) * rad;
+    const q = 280.459 + 0.98564736 * d;
+    const L = (q + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * rad;
+    const e = (23.439 - 0.00000036 * d) * rad;
+    const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L));
+    const dec = Math.asin(Math.sin(e) * Math.sin(L));
+    const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
+    const ha = (gmst * 15 + lon) * rad - ra;
+    return Math.asin(Math.sin(lat * rad) * Math.sin(dec) + Math.cos(lat * rad) * Math.cos(dec) * Math.cos(ha)) / rad;
+  }
+
+  const WATER = {
+    day:   [[15, 86, 115], [10, 62, 89], [6, 42, 64], [3, 18, 29]],
+    dusk:  [[78, 62, 110], [43, 53, 96], [13, 35, 64], [4, 15, 28]],
+    night: [[9, 27, 50], [6, 19, 38], [3, 12, 25], [1, 6, 13]],
+  };
+  const light = { level: 1, dusk: 0, sunEl: 45, phase: 'day' };
+
+  function updateLight() {
+    const el = sunElevation(place.lat, place.lon);
+    light.sunEl = el;
+    if (lightMode === 'day') { light.level = 1; light.dusk = 0; }
+    else if (lightMode === 'night') { light.level = 0; light.dusk = 0; }
+    else {
+      light.level = clamp((el + 10) / 16, 0, 1);            // dark below -10 deg, full day above 6 deg
+      light.dusk = clamp(1 - Math.abs(el + 2) / 8, 0, 1);    // peaks around sunset/sunrise
+    }
+    light.phase = light.level > 0.75 ? 'day' : light.level < 0.2 ? 'night' : 'twilight';
+    buildWater();
+    const pn = document.getElementById('placeName');
+    if (pn) pn.textContent = `${place.name} · ${light.phase}`;
+    const hint = document.getElementById('sunHint');
+    if (hint) hint.textContent = `The sun is ${Math.abs(Math.round(el))}° ${el >= 0 ? 'above' : 'below'} the horizon at ${place.name}. Real sun keeps the tank in step with it.`;
+  }
+
+  function buildWater() {
+    if (!H) return;
+    const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+    const stops = WATER.day.map((d, i) => mix(mix(WATER.night[i], d, light.level), WATER.dusk[i], light.dusk * 0.8));
+    bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+    [0, 0.18, 0.6, 1].forEach((at, i) => bgGrad.addColorStop(at, `rgb(${stops[i].map(Math.round).join(',')})`));
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', `rgb(${stops[0].map(v => Math.round(v * 0.5)).join(',')})`);
   }
 
   function sandY(x) {
@@ -423,7 +471,7 @@
       species: speciesOf(a), airline: code, hue: hueOf(code),
       phase: Math.random() * 10, face: 1, facing: 1, alpha: 0, leaving: false, init: false,
       sx: 0, sy: 0, z: 0.5, scale: 1, kx: 0, ky: 0, boost: 0, bubbleT: Math.random(),
-      hitR: 20, dist: 0, w: null,
+      hitR: 20, dist: 0, w: null, overhead: false, route: undefined, photo: undefined,
     };
   }
 
@@ -444,7 +492,7 @@
       belly: `hsl(${h},${(28 * k).toFixed(0)}%,${(80 * k + 6).toFixed(0)}%)`,
       fin: `hsla(${h},${(s * k).toFixed(0)}%,${(62 * k + 6).toFixed(0)}%,0.85)`,
       stripe: `hsla(${(h + 200) % 360},35%,12%,${(0.32 * k + 0.08).toFixed(2)})`,
-      glow: `hsla(${h},80%,70%,`,
+      glow: `hsla(${h ?? 38},85%,65%,`,
     };
     colorCache.set(key, c);
     return c;
@@ -750,7 +798,7 @@
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 5; i++) {
       const x = ((i + 0.5) / 5) * W + Math.sin(t * 0.15 * MOTION + i * 1.7) * W * 0.06;
-      const a = 0.035 + 0.025 * Math.sin(t * 0.4 * MOTION + i * 2.1);
+      const a = (0.035 + 0.025 * Math.sin(t * 0.4 * MOTION + i * 2.1)) * (0.15 + 0.85 * light.level);
       const g = ctx.createLinearGradient(0, Lay.surface, 0, Lay.sand);
       g.addColorStop(0, `rgba(150,230,255,${a.toFixed(3)})`);
       g.addColorStop(1, 'rgba(150,230,255,0)');
@@ -764,6 +812,16 @@
     }
     ctx.restore();
 
+    // stars in the strip of sky above the surface
+    if (light.level < 0.6) {
+      ctx.fillStyle = '#e8f4ff';
+      for (let i = 0; i < 40; i++) {
+        const sx = (i * 97.3) % W, sy = 4 + ((i * 53.7) % Math.max(10, Lay.surface - 8));
+        ctx.globalAlpha = (0.6 - light.level) * (0.5 + 0.5 * Math.sin(t * 1.5 + i));
+        ctx.fillRect(sx, sy, i % 5 ? 1 : 1.6, i % 5 ? 1 : 1.6);
+      }
+      ctx.globalAlpha = 1;
+    }
     // the surface itself, above which is open sky
     ctx.fillStyle = 'rgba(160,230,255,0.07)';
     ctx.beginPath();
@@ -842,7 +900,7 @@
     ctx.fill();
     // you are here
     const x = W / 2, y = sandY(x);
-    const p = (t * 0.6 * MOTION) % 1;
+    const p = (t * (overheadUntil > performance.now() ? 1.8 : 0.6) * MOTION) % 1;
     ctx.strokeStyle = `rgba(63,208,201,${(0.6 * (1 - p)).toFixed(3)})`;
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(x, y, 8 + p * 26, (8 + p * 26) * 0.35, 0, 0, Math.PI * 2); ctx.stroke();
@@ -858,7 +916,7 @@
   }
 
   function drawSnow(dt) {
-    ctx.fillStyle = 'rgba(210,240,255,0.28)';
+    ctx.fillStyle = light.level < 0.4 ? 'rgba(120,255,230,0.45)' : 'rgba(210,240,255,0.28)';
     for (const s of snow) {
       s.y += s.v * dt * MOTION;
       s.x += Math.sin(s.p + s.y * 0.02) * 0.1;
@@ -1047,6 +1105,11 @@
           f.bubbleT = 0.8;
         }
       }
+      // overhead: within OVERHEAD_KM horizontally of you
+      if (!f.leaving && !f.a.ground && f.alpha > 0.5) {
+        if (!f.overhead && f.dist < OVERHEAD_KM) { f.overhead = true; announceOverhead(f); }
+        else if (f.overhead && f.dist > OVERHEAD_KM * 2) f.overhead = false;
+      }
       drawList.push(f);
     }
     drawList.sort((a, b) => b.z - a.z);
@@ -1071,6 +1134,18 @@
     const col = colorsFor(f, f.z);
     const bob = Math.sin(T * 1.3 * MOTION + f.phase) * 2.5 * f.scale;
     const x = f.sx + f.kx, y = f.sy + f.ky + (f.a.ground ? 0 : bob);
+    const glow = (1 - light.level) * f.alpha;
+    if (glow > 0.05) {
+      const r = f.len * 0.85;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, colorsFor(f, 0).glow + (0.5 * glow).toFixed(3) + ')');
+      g.addColorStop(1, colorsFor(f, 0).glow + '0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
     ctx.save();
     ctx.globalAlpha = f.alpha * (1 - f.z * 0.25);
     ctx.translate(x, y);
@@ -1180,6 +1255,23 @@
     if (!settingsEl.hidden || !cardEl.hidden) hideSheets();
   }
 
+  // ---------------------------------------------------------------- overhead alerts
+  let lastAlertAt = -Infinity, overheadUntil = 0;
+  function announceOverhead(f) {
+    const now = performance.now();
+    overheadUntil = now + 15000;
+    if (!alertsOn || now - lastAlertAt < 20000) return;
+    lastAlertAt = now;
+    const who = f.a.callsign || f.a.reg || 'An aircraft';
+    const sp = SPECIES[f.species];
+    const alt = f.w ? fmt(Math.round(f.w.alt / 100) * 100) : fmt(f.a.alt);
+    const kind = TYPES[f.a.type] || sp.name.toLowerCase();
+    toast(`Look up! ${who} (${kind}) is passing over you at ${alt} ft.`, 9000, () => select(f));
+    f.boost = 1;
+    if (f.species === 'whale') whaleSong(); else chime();
+    if (navigator.vibrate) try { navigator.vibrate([30, 60, 30]); } catch { /* ignore */ }
+  }
+
   // ---------------------------------------------------------------- card
   const cardEl = $('#card');
   const settingsEl = $('#settings');
@@ -1192,10 +1284,108 @@
     settingsEl.hidden = true;
     cardEl.hidden = false;
     cardTick = 0;
+    enrich(f);
     fillCard();
     blip(330, 0.18);
     if (navigator.vibrate) try { navigator.vibrate(8); } catch { /* ignore */ }
   }
+  const routeCache = new Map(), photoCache = new Map();
+  const apFromLol = a => ({ code: a.iata || a.icao, name: a.location || a.name || '', lat: a.lat, lon: a.lon });
+  const apFromDb = a => ({ code: a.iata_code || a.icao_code, name: a.municipality || a.name || '', lat: a.latitude, lon: a.longitude });
+
+  function lookupRoute(f) {
+    const cs = f.a.callsign;
+    if (!cs || f.demo) return Promise.resolve(null);
+    if (routeCache.has(cs)) return routeCache.get(cs);
+    const p = (async () => {
+      try {
+        const r = await fetch('https://api.adsb.lol/api/0/routeset', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planes: [{ callsign: cs, lat: f.a.lat, lng: f.a.lon }] }),
+        });
+        if (r.ok) {
+          const x = (await r.json())?.[0];
+          const ap = x?._airports;
+          if (ap && ap.length >= 2 && x.plausible !== false && x.plausible !== 0) {
+            return { from: apFromLol(ap[0]), to: apFromLol(ap[ap.length - 1]), stops: ap.length - 2, airline: null };
+          }
+        }
+      } catch { /* try the next source */ }
+      try {
+        const fr = (await fetchJSON(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`, 8000))?.response?.flightroute;
+        if (fr?.origin && fr?.destination) return { from: apFromDb(fr.origin), to: apFromDb(fr.destination), stops: 0, airline: fr.airline?.name || null };
+      } catch { /* no route known */ }
+      return null;
+    })();
+    routeCache.set(cs, p);
+    return p;
+  }
+
+  function lookupPhoto(f) {
+    const hex = (f.a.hex || '').toLowerCase();
+    if (!hex || f.demo) return Promise.resolve(null);
+    if (photoCache.has(hex)) return photoCache.get(hex);
+    const p = fetchJSON(`https://api.adsbdb.com/v0/aircraft/${encodeURIComponent(hex)}`, 8000)
+      .then(j => { const a = j?.response?.aircraft; return a ? { url: a.url_photo_thumbnail || a.url_photo || null, owner: a.registered_owner || '' } : null; })
+      .catch(() => null);
+    photoCache.set(hex, p);
+    return p;
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const r = Math.PI / 180;
+    const a = Math.sin((lat2 - lat1) * r / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(a));
+  }
+
+  function enrich(f) {
+    $('#route').hidden = true;
+    $('#routeNote').hidden = true;
+    $('#photoWrap').hidden = true;
+    if (f.demo) return;
+    if (f.route === undefined) lookupRoute(f).then(r => { f.route = r; if (selected === f) fillCard(); });
+    if (f.photo === undefined) lookupPhoto(f).then(p => { f.photo = p; if (selected === f) fillCard(); });
+  }
+
+  function fillRoute(f) {
+    const r = f.route, routeEl = $('#route'), note = $('#routeNote');
+    if (!r || !r.from?.code || !r.to?.code) { routeEl.hidden = true; note.hidden = true; return; }
+    routeEl.hidden = false;
+    setText('rFrom', r.from.code);
+    setText('rFromN', r.from.name);
+    setText('rTo', r.to.code);
+    setText('rToN', r.to.name);
+    let pct = null;
+    if ([r.from.lat, r.from.lon, r.to.lat, r.to.lon].every(v => typeof v === 'number')) {
+      const pos = f.w ? fromWorld(f.w.dx, f.w.dn) : f.a;
+      const a = haversine(r.from.lat, r.from.lon, pos.lat, pos.lon);
+      const b = haversine(pos.lat, pos.lon, r.to.lat, r.to.lon);
+      if (a + b > 0) pct = a / (a + b);
+      note.hidden = false;
+      setText('routeNote', `Scheduled route${r.stops > 0 ? ` with ${r.stops} stop${r.stops > 1 ? 's' : ''}` : ''} · ${fmt(b)} km to go`);
+    } else {
+      note.hidden = true;
+    }
+    const w = pct == null ? '50%' : `${(clamp(pct, 0, 1) * 100).toFixed(1)}%`;
+    $('#rBar').style.width = w;
+    $('#rPlane').style.left = w;
+    if (r.airline && !f.airline) setText('cSub', `${r.airline} · ${TYPES[f.a.type] || f.a.desc || f.a.type || 'Type not broadcast'}`);
+  }
+
+  function fillPhoto(f) {
+    const wrap = $('#photoWrap'), img = $('#cPhoto');
+    const url = f.photo?.url;
+    if (!url) { wrap.hidden = true; return; }
+    if (img.getAttribute('src') !== url) {
+      img.onload = () => { if (selected === f) wrap.hidden = false; };
+      img.onerror = () => { wrap.hidden = true; };
+      img.alt = `Photo of ${f.a.reg || f.a.callsign || 'this aircraft'}`;
+      img.src = url;
+    } else if (img.complete && img.naturalWidth) {
+      wrap.hidden = false;
+    }
+  }
+
   function closeCard() { selected = null; cardEl.hidden = true; }
   function hideSheets() { closeCard(); settingsEl.hidden = true; }
 
@@ -1230,13 +1420,16 @@
     else { setText('sVs', `${vs > 0 ? '↑' : '↓'} ${fmt(Math.abs(Math.round(vs / 50) * 50))}`); setText('sVs2', vs > 0 ? 'ft/min up' : 'ft/min down'); }
     const km = Math.hypot(w.dx, w.dn);
     const brg = (Math.atan2(w.dx, w.dn) * 180 / Math.PI + 360) % 360;
-    setText('sDist', `${fmt(km)} km`);
-    setText('sDist2', `${fmt(km / NM_KM)} nm ${compass(brg)}`);
+    const d1 = v => (v < 10 ? v.toFixed(1) : fmt(v));
+    setText('sDist', `${d1(km)} km`);
+    setText('sDist2', `${d1(km / NM_KM)} nm ${compass(brg)}`);
     setText('sReg', a.reg || '—');
     setText('sReg2', [a.type, a.squawk && `sq ${a.squawk}`].filter(Boolean).join(' · ') || (a.hex || '').toUpperCase());
 
     const ago = Math.max(0, Math.round((Date.now() - lastDataAt) / 1000));
     setText('cSource', f.demo ? 'Demo fish. Not a real flight.' : `Via ${sourceName} · updated ${ago}s ago`);
+    if (f.route !== undefined) fillRoute(f);
+    if (f.photo !== undefined) fillPhoto(f);
     const link = $('#cLink');
     link.hidden = !!f.demo;
     const href = `https://globe.adsb.lol/?icao=${encodeURIComponent(a.hex || '')}`;
@@ -1274,7 +1467,9 @@
     for (const b of document.querySelectorAll('#radius button')) b.setAttribute('aria-checked', Number(b.dataset.nm) === radiusNm ? 'true' : 'false');
     $('#labelsToggle').checked = showLabels;
     $('#soundToggle').checked = soundOn;
-    $('#placeName').textContent = place.name;
+    $('#alertToggle').checked = alertsOn;
+    for (const b of document.querySelectorAll('#lightMode button')) b.setAttribute('aria-checked', b.dataset.light === lightMode ? 'true' : 'false');
+    updateLight();
   }
 
   function setPlace(p) {
@@ -1312,6 +1507,10 @@
       syncSettings();
       resetTank();
     });
+  }
+  $('#alertToggle').addEventListener('change', e => { alertsOn = e.target.checked; store.set('alerts', alertsOn); });
+  for (const b of document.querySelectorAll('#lightMode button')) {
+    b.addEventListener('click', () => { lightMode = b.dataset.light; store.set('light', lightMode); syncSettings(); });
   }
   $('#labelsToggle').addEventListener('change', e => { showLabels = e.target.checked; store.set('labels', showLabels); });
   $('#soundToggle').addEventListener('change', e => { soundOn = e.target.checked; store.set('sound', soundOn); if (soundOn) { unlockAudio(); pop(); } });
@@ -1372,11 +1571,14 @@
     statusEl.title = mode === 'live' ? `Live data from ${sourceName}` : mode === 'demo' ? 'Live data unavailable, showing simulated traffic' : 'Looking for aircraft';
   }
 
-  let toastTimer = 0;
-  function toast(msg, ms = 4000) {
+  let toastTimer = 0, toastAction = null;
+  $('#toast').addEventListener('click', () => { const a = toastAction; $('#toast').hidden = true; if (a) a(); });
+  function toast(msg, ms = 4000, action = null) {
     const el = $('#toast');
     el.textContent = msg;
     el.hidden = false;
+    toastAction = action;
+    el.classList.toggle('action', !!action);
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.hidden = true; }, ms);
   }
@@ -1402,6 +1604,48 @@
     o.start(t);
     o.stop(t + dur + 0.02);
   }
+  function chime() {
+    tone(880, 1320, 0.25, 0.08);
+    setTimeout(() => tone(1175, 1760, 0.3, 0.06), 140);
+  }
+  // A slow gliding moan with vibrato and a long echo.
+  function whaleSong() {
+    if (!soundOn || !actx) return;
+    if (actx.state === 'suspended') actx.resume();
+    const t = actx.currentTime;
+    const out = actx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.2, t + 0.5);
+    out.gain.setValueAtTime(0.2, t + 3.1);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + 3.8);
+    const lp = actx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1100;
+    const delay = actx.createDelay(2);
+    delay.delayTime.value = 0.42;
+    const fb = actx.createGain();
+    fb.gain.value = 0.45;
+    delay.connect(fb).connect(delay);
+    lp.connect(out);
+    out.connect(actx.destination);
+    out.connect(delay);
+    delay.connect(actx.destination);
+    const o1 = actx.createOscillator(), o2 = actx.createOscillator(), g2 = actx.createGain();
+    o1.type = 'sine'; o2.type = 'triangle'; g2.gain.value = 0.25;
+    const lfo = actx.createOscillator(), lg = actx.createGain();
+    lfo.frequency.value = 5; lg.gain.value = 7;
+    lfo.connect(lg); lg.connect(o1.frequency); lg.connect(o2.frequency);
+    const pts = [[0, 150], [0.9, 330], [1.5, 220], [2.4, 410], [3.6, 180]];
+    o1.frequency.setValueAtTime(pts[0][1], t);
+    o2.frequency.setValueAtTime(pts[0][1] * 2, t);
+    for (const [dt, f] of pts.slice(1)) {
+      o1.frequency.exponentialRampToValueAtTime(f, t + dt);
+      o2.frequency.exponentialRampToValueAtTime(f * 2, t + dt);
+    }
+    o1.connect(lp); o2.connect(g2).connect(lp);
+    for (const o of [o1, o2, lfo]) { o.start(t); o.stop(t + 3.9); }
+    setTimeout(() => { try { delay.disconnect(); fb.disconnect(); } catch { /* already gone */ } }, 9000);
+  }
   const pop = () => { tone(380 + Math.random() * 200, 1100, 0.09, 0.12); setTimeout(() => tone(600, 1500, 0.06, 0.06), 60); };
   const blip = (f, d) => tone(f, f * 1.9, d, 0.1);
 
@@ -1420,6 +1664,7 @@
   // ---------------------------------------------------------------- boot
   resize();
   syncSettings();
+  setInterval(updateLight, 60000);
   poll();
   requestAnimationFrame(frame);
   if (firstRun) {

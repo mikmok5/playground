@@ -53,6 +53,12 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
     </div>
+    <div id="route" class="route" hidden>
+      <div class="ap"><b id="rFrom">—</b><span id="rFromN"></span></div>
+      <div class="rtrack" aria-hidden="true"><i id="rBar"></i><span id="rPlane"></span></div>
+      <div class="ap to"><b id="rTo">—</b><span id="rToN"></span></div>
+    </div>
+    <p id="routeNote" class="route-note" hidden></p>
     <dl class="stats">
       <div><dt>Altitude</dt><dd id="sAlt">—</dd><span id="sAlt2" class="minor"></span></div>
       <div><dt>Speed</dt><dd id="sSpd">—</dd><span id="sSpd2" class="minor"></span></div>
@@ -61,6 +67,10 @@
       <div><dt>From you</dt><dd id="sDist">—</dd><span id="sDist2" class="minor"></span></div>
       <div><dt>Registration</dt><dd id="sReg">—</dd><span id="sReg2" class="minor"></span></div>
     </dl>
+    <figure id="photoWrap" class="photo" hidden>
+      <img id="cPhoto" alt="">
+      <figcaption>Photo of this aircraft via airport-data.com</figcaption>
+    </figure>
     <div class="card-foot">
       <span id="cSource" class="minor"></span>
       <a id="cLink" href="#" target="_blank" rel="noopener">Follow this flight ↗</a>
@@ -93,9 +103,19 @@
         </div>
         <p class="hint">How far out to look for aircraft in every direction. 1 nm is 1.85 km.</p>
       </div>
+      <div class="group">
+        <h3>Light</h3>
+        <div class="seg" id="lightMode" role="radiogroup" aria-label="Light">
+          <button type="button" role="radio" data-light="auto">Real sun</button>
+          <button type="button" role="radio" data-light="day">Day</button>
+          <button type="button" role="radio" data-light="night">Night</button>
+        </div>
+        <p class="hint" id="sunHint">The water follows the sun where you are watching.</p>
+      </div>
       <div class="group toggles">
         <label class="toggle"><span>Show callsigns</span><input type="checkbox" id="labelsToggle"><i aria-hidden="true"></i></label>
-        <label class="toggle"><span>Bubble sounds</span><input type="checkbox" id="soundToggle"><i aria-hidden="true"></i></label>
+        <label class="toggle"><span>Overhead alerts</span><input type="checkbox" id="alertToggle"><i aria-hidden="true"></i></label>
+        <label class="toggle"><span>Sounds and whale song</span><input type="checkbox" id="soundToggle"><i aria-hidden="true"></i></label>
       </div>
       <div class="group">
         <h3>How to read the tank</h3>
@@ -105,6 +125,8 @@
           <li><b>Size and haze</b> show north and south. Fish to the north are smaller and fainter.</li>
           <li><b>Color</b> is the airline, so flights from the same airline swim in matching schools.</li>
           <li><b>Bubbles</b> trail aircraft that are climbing.</li>
+          <li><b>Light</b> follows the real sun. At night the fish glow.</li>
+          <li><b>Overhead alerts</b> tell you when a plane passes within 4 km of you, so you can look up. Whales sing as they pass.</li>
           <li><b>Sonar</b> in the corner is the top-down view. Tap it to enlarge it.</li>
         </ul>
       </div>

@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Private repos need a paid plan for Pages, so only auto-deploy public ones; manual runs always go.
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.private == false
     runs-on: ubuntu-latest
     environment:
       name: github-pages
