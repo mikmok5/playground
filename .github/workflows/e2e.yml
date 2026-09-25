@@ -46,9 +46,21 @@ jobs:
           });
           const page = await ctx.newPage();
           page.on('pageerror', e => console.log('PAGE ERROR', e.message));
-          page.on('console', m => { if (m.type() === 'warning' || m.type() === 'error') console.log('console.' + m.type(), m.text()); });
-          await page.goto('http://localhost:8000/');
-          await page.waitForTimeout(15000);
+          let consoleErrors = 0;
+          page.on('console', m => { if (m.type() === 'error') consoleErrors++; });
+          await page.goto('http://localhost:8000/#debug');
+          await page.waitForTimeout(40000);
+          const stats = await page.evaluate(() => {
+            const fs = [...window.__skyaq.fishes.values()].filter(f => !f.leaving);
+            const withCs = fs.filter(f => f.a.callsign);
+            const routed = fs.filter(f => f.route);
+            return {
+              fish: fs.length, withCallsign: withCs.length, routed: routed.length,
+              noRoute: fs.filter(f => f.route === null).length, pending: withCs.filter(f => f.route === undefined).length,
+              sample: routed.slice(0, 10).map(f => `${f.a.callsign} ${f.route.from.code}(${f.route.from.name}) -> ${f.route.to.code}(${f.route.to.name})`),
+            };
+          });
+          console.log('ROUTES:', JSON.stringify(stats, null, 1));
           console.log('STATUS:', await page.textContent('#statusText'), '| offline panel visible:', await page.isVisible('#offline'));
           let found = 0;
           for (let y = 140; y < 740 && found < 4; y += 24) for (let x = 40; x < 380 && found < 4; x += 24) {
@@ -63,6 +75,7 @@ jobs:
               await page.waitForTimeout(200);
             }
           }
+          console.log('console errors (mostly hexdb misses without CORS):', consoleErrors);
           await page.screenshot({ path: 'e2e.png' });
           await browser.close();
           JS

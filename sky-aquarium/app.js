@@ -458,13 +458,13 @@
       if (!f || f.leaving) {
         f = newFish(a);
         fishes.set(a.id, f);
-        if (!isDemo) queueRoute(f);
       }
       f.a = a;
       f.w0 = w0;
       f.t0 = now - clamp(a.age || 0, 0, 30) * 1000;
       f.lastSeen = now;
       f.demo = isDemo;
+      if (!isDemo) queueRoute(f);
       const sp = speciesOf(a);
       if (sp !== f.species) f.species = sp;
     }
@@ -1325,19 +1325,24 @@
     return airportCache.get(icao);
   }
 
+  // Resolves { r, sure }: sure is false when a lookup failed for a temporary reason
+  // (rate limit, network), so the answer is not cached and gets retried later.
   async function fetchRoute(cs) {
+    let sure = true;
     try {
       const fr = (await fetchJSON(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`, 8000))?.response?.flightroute;
-      if (fr?.origin && fr?.destination) return { from: apFromDb(fr.origin), to: apFromDb(fr.destination), stops: 0, airline: fr.airline?.name || null };
-    } catch { /* not in adsbdb */ }
+      if (fr?.origin && fr?.destination) return { r: { from: apFromDb(fr.origin), to: apFromDb(fr.destination), stops: 0, airline: fr.airline?.name || null }, sure };
+    } catch (err) {
+      if (!/HTTP 404/.test(err.message)) sure = false;
+    }
     try {
       const codes = ((await fetchJSON(`https://hexdb.io/api/v1/route/icao/${encodeURIComponent(cs)}`, 8000))?.route || '').split('-').filter(Boolean);
       if (codes.length >= 2) {
         const [a, b] = await Promise.all([hexAirport(codes[0]), hexAirport(codes[codes.length - 1])]);
-        if (a && b) return { from: a, to: b, stops: codes.length - 2, airline: null };
+        if (a && b) return { r: { from: a, to: b, stops: codes.length - 2, airline: null }, sure: true };
       }
-    } catch { /* not in hexdb */ }
-    return null;
+    } catch { /* hexdb answers unknown callsigns without CORS headers, so this is the usual miss */ }
+    return { r: null, sure };
   }
 
   function lookupRoute(f) {
@@ -1350,7 +1355,11 @@
       routeCache.set(cs, p);
       return p;
     }
-    const p = fetchRoute(cs).then(r => {
+    const p = fetchRoute(cs).then(({ r, sure }) => {
+      if (!sure) {
+        routeCache.delete(cs);
+        throw new Error('route lookup failed, will retry');
+      }
       savedRoutes[cs] = { r, t: Date.now() };
       const keys = Object.keys(savedRoutes);
       if (keys.length > 600) for (const k of keys.sort((x, y) => savedRoutes[x].t - savedRoutes[y].t).slice(0, keys.length - 600)) delete savedRoutes[k];
@@ -1384,7 +1393,7 @@
   const routeQueue = [];
   let routeActive = 0;
   function queueRoute(f) {
-    if (!f.a.callsign || f.route !== undefined || f.routeQueued) return;
+    if (!f.a.callsign || f.route !== undefined || f.routeQueued || performance.now() < (f.routeRetryAt || 0)) return;
     f.routeQueued = true;
     routeQueue.push(f);
     pumpRoutes();
@@ -1395,7 +1404,9 @@
       const f = routeQueue.shift();
       if (!fishes.has(f.id) || f.leaving || f.route !== undefined) continue;
       routeActive++;
-      resolveRoute(f).catch(() => { f.route = null; }).finally(() => { routeActive--; pumpRoutes(); });
+      resolveRoute(f)
+        .catch(() => { f.routeQueued = false; f.routeRetryAt = performance.now() + 30000; })
+        .finally(() => { routeActive--; pumpRoutes(); });
     }
   }
 
@@ -1421,7 +1432,7 @@
     $('#routeNote').hidden = true;
     $('#photoWrap').hidden = true;
     if (f.demo) return;
-    if (f.route === undefined) resolveRoute(f);
+    if (f.route === undefined) resolveRoute(f).catch(() => { /* retried by the queue */ });
     if (f.photo === undefined) lookupPhoto(f).then(p => { f.photo = p; if (selected === f) fillCard(); });
   }
 
@@ -1783,6 +1794,9 @@
     if (!document.hidden) { lastFrame = performance.now(); poll(); }
   });
   window.addEventListener('resize', resize);
+
+  // #debug exposes the tank's state for automated checks.
+  if (location.hash === '#debug') window.__skyaq = { fishes, get mode() { return mode; } };
 
   // ---------------------------------------------------------------- boot
   resize();
