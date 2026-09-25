@@ -86,7 +86,8 @@
     A1: 'guppy', A2: 'angel', A3: 'tuna', A4: 'barracuda', A5: 'whale', A6: 'sword', A7: 'jelly',
     B1: 'manta', B2: 'puffer', B4: 'manta', B6: 'puffer', C1: 'crab', C2: 'crab', C3: 'crab',
   };
-  const HEAVY = ['B74', 'B77', 'B78', 'B76', 'A33', 'A34', 'A35', 'A38', 'A30', 'A310', 'MD11', 'DC10', 'C17', 'C5', 'A124', 'IL76', 'A400', 'K35R', 'KC10', 'B52', 'A306', 'A3ST'];
+  const HEAVY = ['B74', 'B77', 'B78', 'B76', 'A33', 'A34', 'A35', 'A38', 'A30', 'A310', 'MD11', 'DC10', 'A124', 'IL76', 'A400', 'K35R', 'KC10', 'B52', 'A3ST'];
+  const HEAVY_EXACT = ['C17', 'C5', 'C5M']; // exact, so a Cessna C172 is not mistaken for a C-17
   const HELI = ['EC', 'H1', 'H6', 'AS3', 'AS5', 'AS6', 'R22', 'R44', 'R66', 'B06', 'B407', 'B412', 'B429', 'S76', 'S92', 'A109', 'A119', 'A139', 'A169', 'A189', 'AW', 'H47', 'H60', 'UH1', 'EH10', 'NH90', 'MD5'];
   const FAST = ['F16', 'F15', 'F18', 'F35', 'F22', 'EUFI', 'TOR', 'HAWK', 'T38', 'A10', 'RFAL', 'GRIF', 'F5', 'M2K'];
   const LARGE = ['A31', 'A32', 'A2', 'A19N', 'B73', 'B3', 'B71', 'E19', 'E29', 'E17', 'BCS', 'MD8', 'MD9', 'C130', 'B717'];
@@ -101,7 +102,7 @@
     if (t) {
       if (t === 'GLID') return 'manta';
       if (t === 'BALL' || t === 'SHIP') return 'puffer';
-      if (startsAny(t, HEAVY)) return 'whale';
+      if (HEAVY_EXACT.includes(t) || startsAny(t, HEAVY)) return 'whale';
       if (t.startsWith('B75')) return 'barracuda';
       if (startsAny(t, HELI)) return 'jelly';
       if (startsAny(t, FAST)) return 'sword';
