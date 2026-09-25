@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#06253a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sky Aquarium">
+  <meta name="description" content="The planes flying over you right now, swimming as fish in a live aquarium.">
+  <title>Sky Aquarium</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="tank" aria-label="Live aquarium: each fish is an aircraft flying near you. Height in the tank is altitude, left and right is west and east."></canvas>
+
+  <header class="hud">
+    <div class="brand">
+      <h1>Sky Aquarium</h1>
+      <button id="placeBtn" class="place" type="button">
+        <span id="placeName">London</span>
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="hud-right">
+      <div id="status" class="status" data-state="wait" role="status">
+        <span class="dot" aria-hidden="true"></span><span id="statusText">Connecting</span>
+      </div>
+      <button id="menuBtn" class="icon-btn" type="button" aria-label="Settings and field guide">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <section id="card" class="sheet" aria-label="Selected aircraft" hidden>
+    <div class="card-head">
+      <canvas id="portrait" width="96" height="72" aria-hidden="true"></canvas>
+      <div class="card-title">
+        <p id="cSpecies" class="eyebrow">Blue Whale</p>
+        <h2 id="cTitle">BAW283</h2>
+        <p id="cSub" class="sub">British Airways · Boeing 777-300ER</p>
+      </div>
+      <button class="close" type="button" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div id="route" class="route" hidden>
+      <div class="ap"><b id="rFrom">—</b><span id="rFromN"></span></div>
+      <div class="rtrack" aria-hidden="true"><i id="rBar"></i><span id="rPlane"></span></div>
+      <div class="ap to"><b id="rTo">—</b><span id="rToN"></span></div>
+    </div>
+    <p id="routeNote" class="route-note" hidden></p>
+    <dl class="stats">
+      <div><dt>Altitude</dt><dd id="sAlt">—</dd><span id="sAlt2" class="minor"></span></div>
+      <div><dt>Speed</dt><dd id="sSpd">—</dd><span id="sSpd2" class="minor"></span></div>
+      <div><dt>Heading</dt><dd id="sHdg">—</dd><span id="sHdg2" class="minor"></span></div>
+      <div><dt>Climb</dt><dd id="sVs">—</dd><span id="sVs2" class="minor"></span></div>
+      <div><dt>From you</dt><dd id="sDist">—</dd><span id="sDist2" class="minor"></span></div>
+      <div><dt>Registration</dt><dd id="sReg">—</dd><span id="sReg2" class="minor"></span></div>
+    </dl>
+    <figure id="photoWrap" class="photo" hidden>
+      <img id="cPhoto" alt="">
+      <figcaption>Photo of this aircraft via airport-data.com</figcaption>
+    </figure>
+    <div class="card-foot">
+      <span id="cSource" class="minor"></span>
+      <a id="cLink" href="#" target="_blank" rel="noopener">Follow this flight ↗</a>
+    </div>
+  </section>
+
+  <section id="settings" class="sheet tall" aria-label="Settings" hidden>
+    <div class="sheet-head">
+      <h2>Tank settings</h2>
+      <button class="close" type="button" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="group">
+        <h3>Where to watch</h3>
+        <div class="chips" id="places">
+          <button type="button" class="chip locate" id="locateBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+            Near me
+          </button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>Tank width</h3>
+        <div class="seg" id="radius" role="radiogroup" aria-label="Tank width">
+          <button type="button" role="radio" data-nm="25">25 nm</button>
+          <button type="button" role="radio" data-nm="50">50 nm</button>
+          <button type="button" role="radio" data-nm="100">100 nm</button>
+        </div>
+        <p class="hint">How far out to look for aircraft in every direction. 1 nm is 1.85 km.</p>
+      </div>
+      <div class="group">
+        <h3>Light</h3>
+        <div class="seg" id="lightMode" role="radiogroup" aria-label="Light">
+          <button type="button" role="radio" data-light="auto">Real sun</button>
+          <button type="button" role="radio" data-light="day">Day</button>
+          <button type="button" role="radio" data-light="night">Night</button>
+        </div>
+        <p class="hint" id="sunHint">The water follows the sun where you are watching.</p>
+      </div>
+      <div class="group toggles">
+        <label class="toggle"><span>Show callsigns</span><input type="checkbox" id="labelsToggle"><i aria-hidden="true"></i></label>
+        <label class="toggle"><span>Overhead alerts</span><input type="checkbox" id="alertToggle"><i aria-hidden="true"></i></label>
+        <label class="toggle"><span>Sounds and whale song</span><input type="checkbox" id="soundToggle"><i aria-hidden="true"></i></label>
+      </div>
+      <div class="group">
+        <h3>How to read the tank</h3>
+        <ul class="howto">
+          <li><b>Height</b> is altitude. The surface is 45,000 ft and the sand is the ground.</li>
+          <li><b>Left and right</b> is west and east of you. The glowing beacon on the sand is where you are.</li>
+          <li><b>Size and haze</b> show north and south. Fish to the north are smaller and fainter.</li>
+          <li><b>Color</b> is the airline, so flights from the same airline swim in matching schools.</li>
+          <li><b>Bubbles</b> trail aircraft that are climbing.</li>
+          <li><b>Light</b> follows the real sun. At night the fish glow.</li>
+          <li><b>Overhead alerts</b> tell you when a plane passes within 4 km of you, so you can look up. Whales sing as they pass.</li>
+          <li><b>Sonar</b> in the corner is the top-down view. Tap it to enlarge it.</li>
+        </ul>
+      </div>
+      <div class="group">
+        <h3>Field guide</h3>
+        <ul class="guide" id="guide"></ul>
+      </div>
+      <p class="credit">Live positions from <a href="https://adsb.lol" target="_blank" rel="noopener">ADSB.lol</a>, <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a> or <a href="https://opensky-network.org" target="_blank" rel="noopener">OpenSky Network</a>, crowd-sourced from ADS-B receivers. Positions can lag by a few seconds and some aircraft are not shown. Not for navigation.</p>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
