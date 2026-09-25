@@ -1,0 +1,37 @@
+name: Probe flight APIs from a browser origin
+
+on:
+  push:
+    branches: [claude/web-app-ideas-7wwit4]
+    paths: ['.github/workflows/probe.yml']
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe endpoints
+        run: |
+          O="Origin: https://mikmok5.github.io"
+          UA="User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1"
+          probe() {
+            echo "::group::$1"
+            curl -sS -m 20 -D - -o body.txt -H "$O" -H "$UA" "${@:2}" | grep -iE '^HTTP|^access-control|^content-type|^retry-after|^x-ratelimit' || true
+            echo "--- body:"; head -c 400 body.txt; echo
+            echo "::endgroup::"
+          }
+          probe adsblol-v2 "https://api.adsb.lol/v2/lat/51.47/lon/-0.45/dist/25"
+          probe adsblol-v2-point "https://api.adsb.lol/v2/point/51.47/-0.45/25"
+          probe airplaneslive "https://api.airplanes.live/v2/point/51.47/-0.45/25"
+          probe adsbfi "https://opendata.adsb.fi/api/v2/lat/51.47/lon/-0.45/dist/25"
+          probe adsbfi-v3 "https://opendata.adsb.fi/api/v3/lat/51.47/lon/-0.45/dist/25"
+          probe adsbone "https://api.adsb.one/v2/point/51.47/-0.45/25"
+          probe opensky "https://opensky-network.org/api/states/all?lamin=51.2&lomin=-0.9&lamax=51.7&lomax=0.0&extended=1"
+          probe routeset-preflight -X OPTIONS -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" "https://api.adsb.lol/api/0/routeset"
+          probe routeset-post -X POST -H "Content-Type: application/json" -d '{"planes":[{"callsign":"BAW117","lat":51.47,"lng":-0.45}]}' "https://api.adsb.lol/api/0/routeset"
+          probe routeset-textplain -X POST -H "Content-Type: text/plain" -d '{"planes":[{"callsign":"BAW117","lat":51.47,"lng":-0.45}]}' "https://api.adsb.lol/api/0/routeset"
+          probe adsbdb-callsign "https://api.adsbdb.com/v0/callsign/BAW117"
+          probe adsbdb-aircraft "https://api.adsbdb.com/v0/aircraft/4CA7B2"
+          probe hexdb-route "https://hexdb.io/callsign-route?callsign=BAW117"
+          probe hexdb-route-api "https://hexdb.io/api/v1/route/icao/BAW117"
+          probe hexdb-airport "https://hexdb.io/api/v1/airport/icao/EGLL"
