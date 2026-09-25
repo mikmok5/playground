@@ -1,0 +1,168 @@
+<title>Pocket Worm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Unbounded:wght@500;700;800&display=swap">
+<style>
+/*STYLE*/
+</style>
+
+<div id="app" data-view="plate">
+  <header class="hud">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Pocket Worm</span>
+    </div>
+    <div class="worm-chips" id="wormChips" role="tablist" aria-label="Worms"></div>
+    <button class="icon-btn" id="speedBtn" type="button" aria-label="Simulation speed">1×</button>
+  </header>
+
+  <main class="stage">
+    <!-- Plate -->
+    <section class="view view-plate" id="view-plate" aria-label="Plate">
+      <canvas id="plateCanvas"></canvas>
+      <div class="state-card" id="stateCard">
+        <div class="state-top">
+          <span class="state-worm" id="stateWorm">N2 · 1</span>
+          <span class="state-cut" id="stateCut" hidden></span>
+        </div>
+        <div class="state-word" id="stateWord">Forward</div>
+        <div class="meters">
+          <div class="meter">
+            <span class="meter-label">Forward <em>AVB · PVC</em></span>
+            <span class="meter-bar"><i id="fwdBar"></i></span>
+          </div>
+          <div class="meter">
+            <span class="meter-label">Reverse <em>AVA · AVD · AVE</em></span>
+            <span class="meter-bar rev"><i id="revBar"></i></span>
+          </div>
+        </div>
+        <canvas class="barcode" id="barcode" aria-label="Activity of all neurons"></canvas>
+        <ol class="events" id="events"></ol>
+      </div>
+      <div class="zoom-toggle">
+        <button type="button" id="zoomBtn" class="pill-btn">Whole plate</button>
+      </div>
+      <div class="dock" role="toolbar" aria-label="Tools">
+        <button type="button" class="tool is-on" data-tool="touch" id="tool-touch">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20 C9 15 14 9 20 4" /><path d="M20 4 l-1.2 3.4 M20 4 l-3.4 1.2" /></svg>
+          <span>Eyelash</span>
+        </button>
+        <button type="button" class="tool" data-tool="food" id="tool-food">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" /><circle cx="10" cy="10" r="1.2" /><circle cx="14.5" cy="11" r="1" /><circle cx="11.5" cy="14.5" r="1.1" /></svg>
+          <span>Bacteria</span>
+        </button>
+        <button type="button" class="tool" data-tool="worm" id="tool-worm">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16 c3 -6 5 2 8 -4 s5 2 8 -4" /><circle cx="20" cy="8" r="1" /></svg>
+          <span>Add worm</span>
+        </button>
+      </div>
+      <p class="hint" id="plateHint">Stroke the worm with the eyelash. Tap its nose, its middle, or its tail.</p>
+    </section>
+
+    <!-- Brain -->
+    <section class="view view-brain" id="view-brain" aria-label="Brain" hidden>
+      <canvas id="brainCanvas"></canvas>
+      <div class="brain-bar">
+        <label class="search">
+          <span class="sr">Find a neuron</span>
+          <input id="findInput" list="neuronList" placeholder="Find neuron, e.g. AVAL" autocomplete="off" spellcheck="false">
+        </label>
+        <button type="button" class="pill-btn" id="labBtn">Experiments</button>
+      </div>
+      <div class="pokes" role="group" aria-label="Stimulate">
+        <button type="button" class="pill-btn" data-poke="nose">Touch nose</button>
+        <button type="button" class="pill-btn" data-poke="tail">Touch tail</button>
+        <button type="button" class="pill-btn" data-poke="fade">Food smell fades</button>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <!-- Relay -->
+    <section class="view view-relay" id="view-relay" aria-label="Relay" hidden>
+      <canvas id="relayCanvas"></canvas>
+      <div class="relay-panel">
+        <div class="relay-tabs" role="tablist">
+          <button type="button" class="seg is-on" data-relay="game" id="relay-game-tab">Relay game</button>
+          <button type="button" class="seg" data-relay="finder" id="relay-finder-tab">Pathfinder</button>
+        </div>
+        <div id="relayGame">
+          <div class="mission">
+            <span class="node-tag" id="gameFrom">ASHL</span>
+            <span class="arrow">→</span>
+            <span class="node-tag target" id="gameTo">AVAL</span>
+            <span class="mission-meta" id="gameMeta">Best: 2 hops</span>
+          </div>
+          <p class="relay-copy" id="gameCopy">Pass the signal from neuron to neuron until it reaches the target. Pick the next cell from the ones this one is wired to.</p>
+          <div class="chain" id="gameChain"></div>
+          <div class="choices" id="gameChoices"></div>
+          <div class="relay-actions">
+            <button type="button" class="pill-btn" id="gameUndo">Undo</button>
+            <button type="button" class="pill-btn" id="gameReveal">Show shortest</button>
+            <button type="button" class="pill-btn strong" id="gameNext">New round</button>
+          </div>
+          <p class="score" id="gameScore"></p>
+        </div>
+        <div id="relayFinder" hidden>
+          <div class="finder-row">
+            <label><span>From</span><input id="finderFrom" list="neuronList" value="PLML" autocomplete="off" spellcheck="false"></label>
+            <label><span>To</span><input id="finderTo" list="neuronList" value="VB5" autocomplete="off" spellcheck="false"></label>
+          </div>
+          <div class="chain" id="finderChain"></div>
+          <p class="relay-copy" id="finderCopy"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- About -->
+    <section class="view view-about" id="view-about" aria-label="About" hidden>
+      <div class="about">
+        <p class="eyebrow">Caenorhabditis elegans · N2 hermaphrodite</p>
+        <h1>A whole nervous system in your pocket.</h1>
+        <p>This worm is a real wiring diagram brought to life. Every neuron and synapse comes from the electron-microscope reconstruction of the <em>C. elegans</em> nervous system: <strong id="aboutCounts">300 neurons</strong> joined by thousands of synapses and gap junctions.</p>
+        <h2>What you can do</h2>
+        <ul>
+          <li><strong>Plate.</strong> Stroke a worm with an eyelash, which is how biologists test touch. The nose and front make it back up; the tail makes it speed forward. Drop bacteria and watch it find them by smell.</li>
+          <li><strong>Brain.</strong> Watch every neuron light up as the worm thinks. Tap one to read about it, stimulate it, or cut it out.</li>
+          <li><strong>Experiments.</strong> Repeat classic laser-ablation experiments: remove the command neurons and the worm can no longer back up.</li>
+          <li><strong>Relay.</strong> Race a signal across the connectome, or find the shortest route between any two cells.</li>
+        </ul>
+        <h2>How the model works</h2>
+        <p>Each neuron is a leaky unit whose activity follows its inputs. Chemical synapses are weighted by how many contacts the micrographs show; gap junctions pull partners toward the same voltage. GABA neurons inhibit. The wiring doesn't record whether a glutamate synapse excites or inhibits, so a few pathways follow the classic circuit papers. Those rules are listed in <code>src/brain.js</code>.</p>
+        <p>The forward and reverse command cells decide the direction. Head motor neurons steer. The body is a kinematic chain that follows its own head, as a worm does on agar. This is a toy model: it gets the famous behaviours right, but it is not a prediction of what a real worm would do.</p>
+        <h2>Data</h2>
+        <p class="small">Wiring and transmitters: OpenWorm <code>CElegansNeuronTables</code>, from Varshney et al. 2011 (PLoS Comput Biol 7:e1001066), building on White et al. 1986. Neuron notes adapted from WormAtlas.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Views">
+    <button type="button" class="tab is-on" data-view="plate">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M8 13 c2 -3 3 1 5 -2 s3 1 4 -1" /></svg>
+      <span>Plate</span>
+    </button>
+    <button type="button" class="tab" data-view="brain">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2" /><circle cx="18" cy="7" r="2" /><circle cx="12" cy="17" r="2" /><path d="M7.5 8.5 L10.8 15.4 M16.5 8.5 L13.2 15.4 M8 7 H16" /></svg>
+      <span>Brain</span>
+    </button>
+    <button type="button" class="tab" data-view="relay">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="19" cy="12" r="2" /><path d="M7 12 h3 l2 -4 l2 8 l2 -4 h1" /></svg>
+      <span>Relay</span>
+    </button>
+    <button type="button" class="tab" data-view="about">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 11 v6 M12 7.5 v.5" /></svg>
+      <span>About</span>
+    </button>
+  </nav>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="sheet" id="sheet" aria-live="polite" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div id="sheetBody"></div>
+  </aside>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <datalist id="neuronList"></datalist>
+</div>
+
+<script>
+/*SCRIPT*/
+</script>
