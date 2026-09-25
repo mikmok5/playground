@@ -103,6 +103,8 @@ a { color: var(--glow); }
 .status[data-state="live"] .dot { background: var(--glow); box-shadow: 0 0 0 0 rgba(63, 208, 201, 0.7); animation: ping 2s infinite; }
 .status[data-state="demo"] .dot { background: var(--amber); }
 .status[data-state="demo"] { color: var(--amber); }
+.status[data-state="offline"] .dot { background: var(--coral); }
+.status[data-state="offline"] { color: var(--coral); }
 .status[data-state="wait"] .dot { animation: blink 1s infinite alternate; }
 @keyframes ping { 70% { box-shadow: 0 0 0 7px rgba(63, 208, 201, 0); } 100% { box-shadow: 0 0 0 0 rgba(63, 208, 201, 0); } }
 @keyframes blink { to { opacity: 0.3; } }
@@ -207,6 +209,12 @@ a { color: var(--glow); }
 }
 .ap { display: grid; min-width: 0; }
 .ap.to { text-align: right; }
+.ap small {
+  font: 500 10px/1.2 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
 .ap b { font: 700 18px/1.1 var(--display); letter-spacing: 0.02em; }
 .ap span {
   font-size: 12px;
@@ -252,7 +260,7 @@ a { color: var(--glow); }
   background: linear-gradient(transparent, rgba(2, 14, 22, 0.8));
 }
 .toast.action { pointer-events: auto; cursor: pointer; }
-.toast.action::after { content: " Tap to meet it."; color: var(--glow); font-weight: 600; }
+.toast.action::after { content: " " attr(data-cta); color: var(--glow); font-weight: 600; }
 
 .stats {
   margin: 14px 0 0;
@@ -407,3 +415,52 @@ a { color: var(--glow); }
 @media (min-width: 700px) {
   .brand h1 { font-size: 20px; }
 }
+
+/* ---------- Offline panel + relay form ---------- */
+.offline {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, calc(100% - 32px));
+  padding: 20px;
+  border-radius: 22px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 20px 50px rgba(0, 8, 14, 0.55);
+}
+.offline h2 { margin: 0 0 8px; font: 700 19px/1.2 var(--display); text-wrap: balance; }
+.offline p { margin: 0; color: var(--ink-dim); font-size: 15px; }
+.offline-actions { margin-top: 16px; display: grid; gap: 8px; }
+.btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-line);
+  background: rgba(159, 231, 255, 0.07);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+}
+.btn.primary { background: var(--glow); border-color: var(--glow); color: #022028; }
+.btn.ghost { background: none; border-color: transparent; color: var(--ink-dim); font-weight: 500; }
+.btn.small { padding: 8px 14px; font-size: 14px; flex: none; }
+.relay-form { display: flex; gap: 8px; }
+.relay-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-line);
+  background: rgba(2, 14, 22, 0.6);
+  color: var(--ink);
+  font: 400 13px/1.3 var(--mono);
+}
+.relay-form input:focus-visible { outline: 2px solid var(--glow); outline-offset: 1px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

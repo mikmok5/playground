@@ -14,17 +14,14 @@ The aircraft flying around you right now, drawn as fish in a live aquarium. Buil
 - **Light** follows the real sun where you are watching. At night the water goes dark, stars come out above the surface and the fish glow. You can pin it to day or night in the menu.
 - **Overhead alerts** pop up when an aircraft passes within 4 km of you, so you can look up and spot it. Whales sing as they go over; everything else chimes.
 
-Tap a fish to see its callsign, airline, type, altitude, speed, heading, climb rate and distance from you, plus its scheduled route with progress (from the ADSB.lol route database, falling back to [adsbdb](https://www.adsbdb.com)) and a photo of that exact airframe when adsbdb has one. Tap open water to make ripples and scatter the fish nearby.
+Each fish shows its callsign and, underneath, where the flight came from and where it's heading (like `LHR → JFK`). Tap a fish to see its airline, type, altitude, speed, heading, climb rate and distance from you, plus its route with full airport names and progress and a photo of that exact airframe when adsbdb has one. Tap open water to make ripples and scatter the fish nearby.
 
 ## Data
 
-The page polls these sources straight from the browser, in this order:
+- **Positions** come from [ADSB.lol](https://api.adsb.lol), falling back to [adsb.fi](https://github.com/adsbfi/opendata), every 5 s. Neither API sends CORS headers, so browsers can't read them directly. The page goes through the [Sky Aquarium relay](../relay/README.md), a free Cloudflare Worker you deploy with one click. Put its link in `config.js`, or paste it in the menu under **Live data relay**.
+- **Routes** come from [adsbdb](https://www.adsbdb.com), falling back to [hexdb](https://hexdb.io). Both allow browser requests. Every flight in view is looked up, nearest first, and the results are cached on the device for 6 hours. A route is dropped when the aircraft isn't roughly between its two airports, because callsigns get reused and the databases can be stale.
 
-1. [ADSB.lol](https://api.adsb.lol) (every 6 s)
-2. [airplanes.live](https://airplanes.live/api-guide/) (every 7 s)
-3. [OpenSky Network](https://openskynetwork.github.io/opensky-api/) (every 15 s, anonymous and rate-limited)
-
-Between polls, each aircraft's position is extrapolated from its speed, track and climb rate, so the fish keep moving smoothly. If none of the sources respond, the tank switches to clearly labeled demo traffic and keeps retrying the live sources.
+Between polls, each aircraft's position is extrapolated from its speed, track and climb rate, so the fish keep moving smoothly. When live data can't be reached, the tank shows a **Connect live flights** panel instead of making anything up. Demo fish are available from that panel if you just want to look around.
 
 ## Running it
 
