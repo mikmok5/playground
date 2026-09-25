@@ -8,6 +8,7 @@ const crypto = require("crypto");
 
 const PORT = Number(process.env.PORT) || 3000;
 const HISTORY_LIMIT = 200;
+const STICKERS = ["drink"];
 
 const clients = new Map(); // id -> { res, name, color, emoji }
 const history = [];
@@ -49,6 +50,15 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     fs.createReadStream(path.join(__dirname, "index.html")).pipe(res);
     return;
+  }
+
+  if (req.method === "GET" && /^\/sticker-[a-z]+\.webp$/.test(url.pathname)) {
+    const file = path.join(__dirname, url.pathname);
+    if (fs.existsSync(file)) {
+      res.writeHead(200, { "Content-Type": "image/webp", "Cache-Control": "max-age=86400" });
+      fs.createReadStream(file).pipe(res);
+      return;
+    }
   }
 
   if (req.method === "GET" && url.pathname === "/events") {
@@ -98,7 +108,8 @@ const server = http.createServer(async (req, res) => {
       }
       case "msg": {
         const text = clean(body.text, 2000);
-        if (!text || !c.name) break;
+        const sticker = STICKERS.includes(body.sticker) ? body.sticker : null;
+        if ((!text && !sticker) || !c.name) break;
         const msg = {
           type: "msg",
           mid: crypto.randomUUID(),
@@ -107,6 +118,7 @@ const server = http.createServer(async (req, res) => {
           color: c.color,
           emoji: c.emoji,
           text,
+          sticker,
           ts: Date.now(),
           reactions: {},
         };

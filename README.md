@@ -1,5 +1,12 @@
 # playground
 
+## 📱 Use it from your phone (no computer needed)
+
+Bubble Chat is published on claude.ai: https://claude.ai/artifact/VoCtsSm43dMqQxhwyVQRMn
+
+To invite a friend, open it, tap **Share**, add their email, and give them **Editor** access so they can send messages.
+The source is `chat/online.template.html`, which has the sticker as a placeholder that gets filled in when it's published.
+
 ## 💬 Bubble Chat — a LAN texting app
 
 A tiny, zero-dependency group chat you run on your own computer and share with friends on the same Wi-Fi.
@@ -18,7 +25,7 @@ It prints something like:
 
 Send the "Send to friends" link to anyone on the same network.
 
-**Fun stuff:** emoji avatars + colors, double-click (or long-press on phones) a message to react,
+**Fun stuff:** a smoothie sticker, emoji avatars + colors, double-click (or long-press on phones) a message to react,
 👋 nudge button shakes everyone's screen, emoji-only messages show up big, typing indicators,
 and slash commands: `/confetti`, `/shrug`, `/tableflip`, `/unflip`, `/lenny`.
 

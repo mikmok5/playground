@@ -95,6 +95,17 @@
   }
   .row.mine .bubble { background: var(--mine); color: #fff; }
   .bubble.big { font-size: 40px; background: none !important; padding: 0 4px; }
+  .bubble.sticker { background: none !important; padding: 0 4px; }
+  .bubble.sticker img { display: block; width: 96px; height: auto; filter: drop-shadow(0 4px 8px rgba(0,0,0,.2)); }
+  .tray {
+    position: fixed; left: 12px; bottom: calc(70px + env(safe-area-inset-bottom));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+    padding: 10px; display: flex; gap: 8px; z-index: 10;
+    box-shadow: 0 6px 24px rgba(0,0,0,.18);
+  }
+  .tray button { border: 0; background: var(--theirs); border-radius: 14px; padding: 6px; cursor: pointer; }
+  .tray img { display: block; height: 88px; width: auto; }
+  .btn.ghost img { width: 18px; display: block; }
   .meta { font-size: 11px; color: var(--muted); margin: 2px 10px 0; }
   .reactions { display: flex; gap: 4px; margin-top: 2px; flex-wrap: wrap; }
   .reactions button {
@@ -226,6 +237,7 @@
   <div id="log"></div>
   <div id="typing"></div>
   <form class="composer" id="composer">
+    <button type="button" class="btn ghost" id="stickerBtn" title="Stickers"><img alt="Stickers" src="/sticker-drink.webp" /></button>
     <button type="button" class="btn ghost" id="nudge" title="Nudge everyone">👋</button>
     <input id="text" autocomplete="off" placeholder="Say something… (try /confetti)" maxlength="2000" />
     <button class="btn">Send</button>
@@ -248,6 +260,7 @@
 const EMOJIS = ["🐸","🦊","🐼","🐙","🦄","🐝","🐧","🦖","👽","🤖","🍕","🌵"];
 const COLORS = ["#ffb3c7","#ffd6a5","#fdffb6","#caffbf","#9bf6ff","#a0c4ff","#bdb2ff","#ffc6ff"];
 const REACTIONS = ["❤️","😂","😮","😢","👍","🔥"];
+const STICKERS = ["drink"];
 const $ = (s) => document.querySelector(s);
 
 let me = { id: null, name: "", emoji: EMOJIS[0], color: COLORS[0] };
@@ -309,7 +322,7 @@ function handle(ev) {
       renderTyping();
       addMsg(ev);
       if (ev.from !== me.id) blip();
-      if (/^\/confetti\b/i.test(ev.text)) confetti();
+      if (/^\/confetti\b/i.test(ev.text || "")) confetti();
       break;
     case "system": addSys(ev.text); break;
     case "roster": renderRoster(ev.roster); break;
@@ -371,8 +384,17 @@ function addMsg(m) {
   name.className = "name";
   name.textContent = m.name;
   const bubble = document.createElement("div");
-  bubble.className = "bubble" + (onlyEmoji(m.text) ? " big" : "");
-  bubble.textContent = m.text;
+  if (m.sticker) {
+    bubble.className = "bubble sticker";
+    const img = document.createElement("img");
+    img.src = `/sticker-${m.sticker}.webp`;
+    img.alt = "sticker";
+    img.draggable = false;
+    bubble.append(img);
+  } else {
+    bubble.className = "bubble" + (onlyEmoji(m.text) ? " big" : "");
+    bubble.textContent = m.text;
+  }
   bubble.title = new Date(m.ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   bubble.ondblclick = (e) => openPicker(e, m.mid);
   let press;
@@ -463,6 +485,22 @@ $("#text").oninput = () => {
     lastTyping = Date.now();
     send({ type: "typing" });
   }
+};
+
+$("#stickerBtn").onclick = () => {
+  const open = document.querySelector(".tray");
+  open?.remove();
+  if (open) return;
+  const t = document.createElement("div");
+  t.className = "tray";
+  for (const s of STICKERS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `<img alt="${s} sticker" src="/sticker-${s}.webp">`;
+    b.onclick = () => { send({ type: "msg", sticker: s }); t.remove(); };
+    t.append(b);
+  }
+  document.body.append(t);
 };
 
 let lastNudge = 0;
