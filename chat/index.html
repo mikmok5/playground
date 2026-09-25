@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Bubble Chat</title>
+<style>
+  :root {
+    --bg: #fdf6ff;
+    --panel: #ffffff;
+    --ink: #2b2140;
+    --muted: #8a7fa3;
+    --line: #eadff5;
+    --mine: #7c4dff;
+    --theirs: #f1eafb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17121f;
+      --panel: #211a2d;
+      --ink: #f2ecff;
+      --muted: #9d92b5;
+      --line: #342a45;
+      --mine: #8f63ff;
+      --theirs: #2d2440;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .app {
+    width: 100%;
+    max-width: 720px;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border-inline: 1px solid var(--line);
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  .roster { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+  .pill {
+    font-size: 13px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--theirs);
+    white-space: nowrap;
+  }
+  .pill::before { content: "● "; color: #2ecc71; }
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sys { align-self: center; font-size: 13px; color: var(--muted); padding: 4px 0; }
+  .row { display: flex; gap: 8px; align-items: flex-end; max-width: 85%; }
+  .row.mine { align-self: flex-end; flex-direction: row-reverse; }
+  .avatar {
+    width: 32px; height: 32px; flex: none;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 18px;
+  }
+  .row.cont .avatar { visibility: hidden; }
+  .bubble-wrap { display: flex; flex-direction: column; min-width: 0; }
+  .row.mine .bubble-wrap { align-items: flex-end; }
+  .name { font-size: 12px; color: var(--muted); margin: 0 10px 2px; }
+  .row.cont .name, .row.mine .name { display: none; }
+  .bubble {
+    padding: 8px 12px;
+    border-radius: 18px;
+    background: var(--theirs);
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    cursor: pointer;
+    position: relative;
+    animation: pop .25s cubic-bezier(.3,1.6,.6,1);
+  }
+  .row.mine .bubble { background: var(--mine); color: #fff; }
+  .bubble.big { font-size: 40px; background: none !important; padding: 0 4px; }
+  .meta { font-size: 11px; color: var(--muted); margin: 2px 10px 0; }
+  .reactions { display: flex; gap: 4px; margin-top: 2px; flex-wrap: wrap; }
+  .reactions button {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    border-radius: 999px;
+    font-size: 13px;
+    padding: 0 6px;
+    cursor: pointer;
+  }
+  .reactions button.me { border-color: var(--mine); }
+  .picker {
+    position: fixed;
+    display: flex;
+    gap: 2px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 6px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.18);
+    z-index: 10;
+  }
+  .picker button {
+    border: 0; background: none; font-size: 22px; cursor: pointer;
+    border-radius: 50%; width: 36px; height: 36px;
+    transition: transform .1s;
+  }
+  .picker button:hover { transform: scale(1.3); }
+  #typing { height: 20px; padding: 0 16px; font-size: 13px; color: var(--muted); }
+  form.composer {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+  }
+  .composer input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 10px 16px;
+    font: inherit;
+    outline: none;
+  }
+  .composer input:focus { border-color: var(--mine); }
+  .btn {
+    border: 0;
+    border-radius: 999px;
+    background: var(--mine);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    padding: 0 16px;
+    cursor: pointer;
+  }
+  .btn.ghost { background: var(--theirs); color: var(--ink); padding: 0 12px; font-size: 20px; }
+
+  /* Join screen */
+  #join {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    background: var(--bg);
+    z-index: 20;
+    padding: 16px;
+  }
+  #join form {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 28px;
+    width: 100%;
+    max-width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    text-align: center;
+  }
+  #join h2 { margin: 0; font-size: 28px; }
+  #join p { margin: 0; color: var(--muted); }
+  #join input {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 12px;
+    font: inherit;
+    text-align: center;
+  }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .choices button {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background: var(--theirs);
+    font-size: 20px;
+    cursor: pointer;
+  }
+  .choices button.on { border-color: var(--mine); transform: scale(1.1); }
+  #join .btn { padding: 12px; }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } }
+  @keyframes shake {
+    10%, 90% { transform: translate(-2px, 1px) rotate(-1deg); }
+    20%, 80% { transform: translate(4px, -2px) rotate(1deg); }
+    30%, 50%, 70% { transform: translate(-8px, 2px) rotate(-2deg); }
+    40%, 60% { transform: translate(8px, -1px) rotate(2deg); }
+  }
+  .shake { animation: shake .6s; }
+  .confetti {
+    position: fixed; top: -20px;
+    font-size: 24px;
+    pointer-events: none;
+    z-index: 30;
+    animation: fall linear forwards;
+  }
+  @keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <h1>💬 Bubble Chat</h1>
+    <div class="roster" id="roster"></div>
+  </header>
+  <div id="log"></div>
+  <div id="typing"></div>
+  <form class="composer" id="composer">
+    <button type="button" class="btn ghost" id="nudge" title="Nudge everyone">👋</button>
+    <input id="text" autocomplete="off" placeholder="Say something… (try /confetti)" maxlength="2000" />
+    <button class="btn">Send</button>
+  </form>
+</div>
+
+<div id="join">
+  <form id="joinForm">
+    <h2>Hey there! 👋</h2>
+    <p>Pick a name and a look</p>
+    <input id="nameInput" placeholder="Your name" maxlength="24" required autofocus />
+    <div class="choices" id="emojis"></div>
+    <div class="choices" id="colors"></div>
+    <button class="btn">Join the chat</button>
+    <div class="hint">Double-click (or long-press) a message to react</div>
+  </form>
+</div>
+
+<script>
+const EMOJIS = ["🐸","🦊","🐼","🐙","🦄","🐝","🐧","🦖","👽","🤖","🍕","🌵"];
+const COLORS = ["#ffb3c7","#ffd6a5","#fdffb6","#caffbf","#9bf6ff","#a0c4ff","#bdb2ff","#ffc6ff"];
+const REACTIONS = ["❤️","😂","😮","😢","👍","🔥"];
+const $ = (s) => document.querySelector(s);
+
+let me = { id: null, name: "", emoji: EMOJIS[0], color: COLORS[0] };
+try { Object.assign(me, JSON.parse(localStorage.getItem("bubble-me") || "{}"), { id: null }); } catch {}
+
+// --- join screen
+function renderChoices(el, list, key, render) {
+  el.innerHTML = "";
+  for (const v of list) {
+    const b = document.createElement("button");
+    b.type = "button";
+    render(b, v);
+    if (me[key] === v) b.classList.add("on");
+    b.onclick = () => { me[key] = v; renderChoices(el, list, key, render); };
+    el.append(b);
+  }
+}
+renderChoices($("#emojis"), EMOJIS, "emoji", (b, v) => (b.textContent = v));
+renderChoices($("#colors"), COLORS, "color", (b, v) => (b.style.background = v));
+$("#nameInput").value = me.name;
+
+let joined = false;
+$("#joinForm").onsubmit = (e) => {
+  e.preventDefault();
+  me.name = $("#nameInput").value.trim();
+  if (!me.name) return;
+  try { localStorage.setItem("bubble-me", JSON.stringify({ name: me.name, emoji: me.emoji, color: me.color })); } catch {}
+  joined = true;
+  $("#join").remove();
+  $("#text").focus();
+  if (me.id) send({ type: "join", name: me.name, emoji: me.emoji, color: me.color });
+};
+
+// --- networking
+function send(payload) {
+  return fetch("/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: me.id, ...payload }),
+  });
+}
+
+const es = new EventSource("/events");
+es.onmessage = (e) => handle(JSON.parse(e.data));
+
+const typers = new Map();
+function handle(ev) {
+  switch (ev.type) {
+    case "hello":
+      me.id = ev.id;
+      $("#log").innerHTML = "";
+      lastFrom = null;
+      ev.history.forEach(addMsg);
+      renderRoster(ev.roster);
+      if (joined) send({ type: "join", name: me.name, emoji: me.emoji, color: me.color });
+      break;
+    case "msg":
+      typers.delete(ev.from);
+      renderTyping();
+      addMsg(ev);
+      if (ev.from !== me.id) blip();
+      if (/^\/confetti\b/i.test(ev.text)) confetti();
+      break;
+    case "system": addSys(ev.text); break;
+    case "roster": renderRoster(ev.roster); break;
+    case "react": renderReactions(ev.mid, ev.reactions); break;
+    case "typing":
+      if (ev.from === me.id) break;
+      clearTimeout(typers.get(ev.from)?.t);
+      typers.set(ev.from, { name: ev.name, t: setTimeout(() => { typers.delete(ev.from); renderTyping(); }, 3000) });
+      renderTyping();
+      break;
+    case "nudge":
+      addSys(`${ev.emoji} ${ev.name} nudged everyone!`);
+      $("#app").classList.remove("shake");
+      void $("#app").offsetWidth;
+      $("#app").classList.add("shake");
+      navigator.vibrate?.(200);
+      blip(220);
+      break;
+  }
+}
+
+// --- rendering
+let lastFrom = null;
+function scrollDown() {
+  const log = $("#log");
+  log.scrollTop = log.scrollHeight;
+}
+function nearBottom() {
+  const log = $("#log");
+  return log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+}
+
+function addSys(text) {
+  const d = document.createElement("div");
+  d.className = "sys";
+  d.textContent = text;
+  $("#log").append(d);
+  lastFrom = null;
+  scrollDown();
+}
+
+const onlyEmoji = (s) => /^(\p{Extended_Pictographic}|\p{Emoji_Component}|\s|‍|️){1,12}$/u.test(s) && !/^[\d#*\s]+$/.test(s);
+
+function addMsg(m) {
+  const stick = nearBottom() || m.from === me.id;
+  const row = document.createElement("div");
+  row.className = "row" + (m.from === me.id ? " mine" : "") + (lastFrom === m.from ? " cont" : "");
+  row.dataset.mid = m.mid;
+  lastFrom = m.from;
+
+  const av = document.createElement("div");
+  av.className = "avatar";
+  av.style.background = m.color || "#ddd";
+  av.textContent = m.emoji || "🙂";
+
+  const wrap = document.createElement("div");
+  wrap.className = "bubble-wrap";
+  const name = document.createElement("div");
+  name.className = "name";
+  name.textContent = m.name;
+  const bubble = document.createElement("div");
+  bubble.className = "bubble" + (onlyEmoji(m.text) ? " big" : "");
+  bubble.textContent = m.text;
+  bubble.title = new Date(m.ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  bubble.ondblclick = (e) => openPicker(e, m.mid);
+  let press;
+  bubble.addEventListener("touchstart", (e) => { press = setTimeout(() => openPicker(e.touches[0], m.mid), 450); }, { passive: true });
+  bubble.addEventListener("touchend", () => clearTimeout(press));
+  bubble.addEventListener("touchmove", () => clearTimeout(press));
+  const reactions = document.createElement("div");
+  reactions.className = "reactions";
+
+  wrap.append(name, bubble, reactions);
+  row.append(av, wrap);
+  $("#log").append(row);
+  renderReactions(m.mid, m.reactions || {});
+  if (stick) scrollDown();
+}
+
+function renderReactions(mid, reactions) {
+  const el = document.querySelector(`[data-mid="${mid}"] .reactions`);
+  if (!el) return;
+  el.innerHTML = "";
+  for (const [r, who] of Object.entries(reactions)) {
+    const b = document.createElement("button");
+    b.textContent = `${r} ${who.length}`;
+    b.title = who.join(", ");
+    if (who.includes(me.name)) b.classList.add("me");
+    b.onclick = () => send({ type: "react", mid, reaction: r });
+    el.append(b);
+  }
+}
+
+function openPicker(e, mid) {
+  getSelection()?.removeAllRanges();
+  closePicker();
+  const p = document.createElement("div");
+  p.className = "picker";
+  for (const r of REACTIONS) {
+    const b = document.createElement("button");
+    b.textContent = r;
+    b.onclick = () => { send({ type: "react", mid, reaction: r }); closePicker(); };
+    p.append(b);
+  }
+  document.body.append(p);
+  const w = p.offsetWidth;
+  p.style.left = Math.max(8, Math.min(e.clientX - w / 2, innerWidth - w - 8)) + "px";
+  p.style.top = Math.max(8, e.clientY - 60) + "px";
+  setTimeout(() => addEventListener("pointerdown", outside), 0);
+}
+function outside(e) { if (!e.target.closest(".picker")) closePicker(); }
+function closePicker() {
+  document.querySelector(".picker")?.remove();
+  removeEventListener("pointerdown", outside);
+}
+
+function renderRoster(list) {
+  const el = $("#roster");
+  el.innerHTML = "";
+  for (const u of list) {
+    const s = document.createElement("span");
+    s.className = "pill";
+    s.textContent = `${u.emoji} ${u.name}`;
+    el.append(s);
+  }
+}
+
+function renderTyping() {
+  const names = [...typers.values()].map((t) => t.name);
+  $("#typing").textContent =
+    names.length === 0 ? "" :
+    names.length === 1 ? `${names[0]} is typing…` :
+    `${names.join(", ")} are typing…`;
+}
+
+// --- composer
+const COMMANDS = { "/shrug": "¯\\_(ツ)_/¯", "/tableflip": "(╯°□°)╯︵ ┻━┻", "/unflip": "┬─┬ノ( º _ ºノ)", "/lenny": "( ͡° ͜ʖ ͡°)" };
+$("#composer").onsubmit = (e) => {
+  e.preventDefault();
+  let text = $("#text").value.trim();
+  if (!text) return;
+  if (COMMANDS[text.toLowerCase()]) text = COMMANDS[text.toLowerCase()];
+  if (text.toLowerCase() === "/confetti") text = "/confetti 🎉";
+  $("#text").value = "";
+  send({ type: "msg", text });
+};
+
+let lastTyping = 0;
+$("#text").oninput = () => {
+  if (Date.now() - lastTyping > 1500) {
+    lastTyping = Date.now();
+    send({ type: "typing" });
+  }
+};
+
+let lastNudge = 0;
+$("#nudge").onclick = () => {
+  if (Date.now() - lastNudge < 3000) return;
+  lastNudge = Date.now();
+  send({ type: "nudge" });
+};
+
+// --- fun bits
+let audio;
+function blip(freq = 660) {
+  try {
+    audio ||= new AudioContext();
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.frequency.value = freq;
+    o.type = "sine";
+    g.gain.setValueAtTime(0.15, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.2);
+    o.connect(g).connect(audio.destination);
+    o.start();
+    o.stop(audio.currentTime + 0.2);
+  } catch {}
+}
+
+function confetti() {
+  const bits = ["🎉","🎊","✨","💖","⭐","🌈"];
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement("div");
+    s.className = "confetti";
+    s.textContent = bits[i % bits.length];
+    s.style.left = Math.random() * 100 + "vw";
+    s.style.animationDuration = 2 + Math.random() * 2 + "s";
+    s.style.animationDelay = Math.random() * 0.8 + "s";
+    document.body.append(s);
+    setTimeout(() => s.remove(), 5000);
+  }
+}
+</script>
+</body>
+</html>
